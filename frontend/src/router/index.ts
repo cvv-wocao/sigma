@@ -1,0 +1,87 @@
+import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { useUserStore } from '@/stores/user'
+
+// 路由表：按 auth / recommend / search / project / history / user 六个业务域划分
+// 「智能对话」不再是独立页面，而是 AI 推荐页右侧的对话面板（见 components/ChatPanel.vue）
+const routes: RouteRecordRaw[] = [
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/views/auth/LoginView.vue'),
+    meta: { title: '登录', guestOnly: true }
+  },
+  {
+    path: '/register',
+    name: 'register',
+    component: () => import('@/views/auth/RegisterView.vue'),
+    meta: { title: '注册', guestOnly: true }
+  },
+  {
+    path: '/',
+    component: () => import('@/layouts/BasicLayout.vue'),
+    children: [
+      { path: '', redirect: '/recommend' },
+      {
+        path: 'recommend',
+        name: 'recommend',
+        component: () => import('@/views/recommend/RecommendView.vue'),
+        meta: { title: 'AI 推荐', requiresAuth: true }
+      },
+      {
+        path: 'search',
+        name: 'search',
+        component: () => import('@/views/search/SearchView.vue'),
+        meta: { title: '代码检索', requiresAuth: true }
+      },
+      {
+        path: 'repo/:owner/:repo',
+        name: 'repo-detail',
+        component: () => import('@/views/repo/RepositoryDetailView.vue'),
+        meta: { title: '仓库详情', requiresAuth: true }
+      },
+      {
+        path: 'history',
+        name: 'history',
+        component: () => import('@/views/history/HistoryView.vue'),
+        meta: { title: '历史记录', requiresAuth: true }
+      },
+      {
+        path: 'project',
+        name: 'project',
+        component: () => import('@/views/project/ProjectView.vue'),
+        meta: { title: '项目管理', requiresAuth: true }
+      },
+      {
+        path: 'profile',
+        name: 'profile',
+        component: () => import('@/views/user/ProfileView.vue'),
+        meta: { title: '个人中心', requiresAuth: true }
+      },
+      // 旧地址兼容：智能对话已经并入 AI 推荐页，老书签与历史链接统一重定向过去
+      { path: 'chat', redirect: '/recommend' }
+    ]
+  },
+  { path: '/:pathMatch(.*)*', redirect: '/recommend' }
+]
+
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
+  routes
+})
+
+router.beforeEach((to) => {
+  const userStore = useUserStore()
+  if (to.meta.requiresAuth && !userStore.isLoggedIn) {
+    return { name: 'login', query: { redirect: to.fullPath } }
+  }
+  if (to.meta.guestOnly && userStore.isLoggedIn) {
+    return { name: 'recommend' }
+  }
+  return true
+})
+
+router.afterEach((to) => {
+  document.title = to.meta.title ? `${to.meta.title as string} - 智能体平台` : '智能体平台'
+})
+
+export default router

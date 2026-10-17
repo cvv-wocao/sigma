@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cn.itcast.agent</groupId>
+        <artifactId>backend</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>gateway-service</artifactId>
+    <packaging>jar</packaging>
+
+    <name>gateway-service</name>
+    <description>API 网关服务：统一入口、路由转发、跨域与鉴权拦截</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>cn.itcast.agent</groupId>
+            <artifactId>common-core</artifactId>
+        </dependency>
+        <!--
+            复用 common-security 的 JwtTokenProvider 做令牌校验。
+            其中的 spring-boot-starter-security 已标记为 optional，不会传递到 WebFlux 网关，
+            因此这里只需额外保证 jjwt 的运行时实现可用。
+        -->
+        <dependency>
+            <groupId>cn.itcast.agent</groupId>
+            <artifactId>common-security</artifactId>
+        </dependency>
+
+        <!--
+            网关坐标说明：
+            Spring Cloud 2025.1.0 起，网关由 spring-cloud-gateway-dependencies:5.0.0 管理，
+            原坐标 spring-cloud-starter-gateway 不再发布对应版本，统一使用新的 starter 名称。
+        -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-gateway-server-webflux</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
+        </dependency>
+
+        <!-- 可观测性：actuator 提供指标端点，micrometer 的 Prometheus 注册表把指标转成抓取格式 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>cn.itcast.agent.gateway.GatewayApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

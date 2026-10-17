@@ -1,0 +1,305 @@
+# =====================================================================
+# java-agent-platform 编排文件
+#
+#   仅基础设施（默认，开发时后端在 IDE 里跑）：
+#     docker compose up -d
+#
+#   基础设施 + 后端服务（镜像内构建，一键起全栈）：
+#     docker compose --profile app up -d --build
+#
+#   基础设施 + 监控（Prometheus :9090 + Grafana :3000）：
+#     docker compose --profile monitoring up -d
+#
+# 使用前：copy .env.example .env
+# =====================================================================
+name: java-agent-platform
+
+services:
+  # ------------------------- MySQL -------------------------
+  mysql:
+    image: mysql:8.4
+    container_name: jap-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-java_agent_platform}
+      TZ: ${TZ:-Asia/Shanghai}
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_general_ci
+      - --mysql-native-password=ON
+    ports:
+      - "${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      # 首次初始化时按文件名顺序执行：01-schema.sql 建库，02-user.sql 建用户表，03-ai.sql 建对话历史表
+      - ./infrastructure/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - jap-network
+
+  # ------------------------- Redis -------------------------
+  redis:
+    image: redis:7.4-alpine
+    container_name: jap-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - /usr/local/etc/redis/redis.conf
+      - --requirepass
+      - ${REDIS_PASSWORD:-redis123}
+    ports:
+      - "${REDIS_PORT:-6380}:6379"
+    volumes:
+      - redis-data:/data
+      - ./infrastructure/redis/conf/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD:-redis123} ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - jap-network
+
+  # ------------------------- Nacos -------------------------
+  # 注：Spring Cloud Alibaba 2025.1.0.0 使用 nacos-client 3.x，兼容 Nacos 2.2+ 服务端。
+  #     如需 Nacos 3.x 服务端，把 image 改为 nacos/nacos-server:v3.1.1 即可。
+  nacos:
+    image: nacos/nacos-server:v2.4.3
+    container_name: jap-nacos
+    restart: unless-stopped
+    environment:
+      MODE: standalone
+      PREFER_HOST_MODE: hostname
+      NACOS_AUTH_ENABLE: "false"
+      JVM_XMS: 256m
+      JVM_XMX: 512m
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${NACOS_HTTP_PORT:-8848}:8848"
+      - "${NACOS_GRPC_PORT:-9848}:9848"
+    volumes:
+      - nacos-data:/home/nacos/data
+      # 配置数据挂载说明见 infrastructure/nacos/README.md
+    networks:
+      - jap-network
+
+  # ------------------------- Nginx -------------------------
+  # 前端静态资源 + 反向代理到网关（网关无论跑在 IDE 还是容器里，宿主端口都是 8080）
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: jap-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend/dist:/usr/share/nginx/html:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - jap-network
+
+  # ------------------------- 后端：用户服务 -------------------------
+  user-service:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: backend/user-service/Dockerfile
+    image: java-agent-platform/user-service:1.0.0
+    container_name: jap-user-service
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-java_agent_platform}
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      NACOS_SERVER_ADDR: nacos:8848
+      JWT_SECRET: ${JWT_SECRET:-java-agent-platform-dev-secret-key-change-me-please}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-120}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "8081:8081"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      nacos:
+        condition: service_started
+    networks:
+      - jap-network
+
+  # ------------------------- 后端：网关服务 -------------------------
+  gateway-service:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: backend/gateway-service/Dockerfile
+    image: java-agent-platform/gateway-service:1.0.0
+    container_name: jap-gateway-service
+    restart: unless-stopped
+    environment:
+      NACOS_SERVER_ADDR: nacos:8848
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${GATEWAY_HTTP_PORT:-8080}:8080"
+    depends_on:
+      nacos:
+        condition: service_started
+      user-service:
+        condition: service_started
+      ai-service:
+        condition: service_started
+      search-service:
+        condition: service_started
+      project-service:
+        condition: service_started
+    networks:
+      - jap-network
+
+  # ------------------------- 后端：检索服务 -------------------------
+  search-service:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: backend/search-service/Dockerfile
+    image: java-agent-platform/search-service:1.0.0
+    container_name: jap-search-service
+    restart: unless-stopped
+    environment:
+      NACOS_SERVER_ADDR: nacos:8848
+      GITEE_BASE_URL: ${GITEE_BASE_URL:-https://gitee.com}
+      GITEE_ACCESS_TOKEN: ${GITEE_ACCESS_TOKEN:-}
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-github}
+      GITHUB_BASE_URL: ${GITHUB_BASE_URL:-https://api.github.com}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "8083:8083"
+    depends_on:
+      nacos:
+        condition: service_started
+    networks:
+      - jap-network
+
+  # ------------------------- 后端：AI 智能体服务 -------------------------
+  ai-service:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: backend/ai-service/Dockerfile
+    image: java-agent-platform/ai-service:1.0.0
+    container_name: jap-ai-service
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-java_agent_platform}
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis123}
+      NACOS_SERVER_ADDR: nacos:8848
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_CHAT_MODEL: ${DEEPSEEK_CHAT_MODEL:-deepseek-chat}
+      # 长期记忆：默认只用关键词打分，把下面四项配齐后自动切换到向量召回
+      MEMORY_EMBEDDING_ENABLED: ${MEMORY_EMBEDDING_ENABLED:-false}
+      MEMORY_EMBEDDING_BASE_URL: ${MEMORY_EMBEDDING_BASE_URL:-}
+      MEMORY_EMBEDDING_API_KEY: ${MEMORY_EMBEDDING_API_KEY:-}
+      MEMORY_EMBEDDING_MODEL: ${MEMORY_EMBEDDING_MODEL:-}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "8082:8082"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      nacos:
+        condition: service_started
+      search-service:
+        condition: service_started
+    networks:
+      - jap-network
+
+  # ------------------------- 后端：项目服务 -------------------------
+  project-service:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: backend/project-service/Dockerfile
+    image: java-agent-platform/project-service:1.0.0
+    container_name: jap-project-service
+    restart: unless-stopped
+    environment:
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-java_agent_platform}
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      NACOS_SERVER_ADDR: nacos:8848
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "8084:8084"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      nacos:
+        condition: service_started
+    networks:
+      - jap-network
+
+  # ------------------------- 监控：Prometheus -------------------------
+  # 仅采集指标，不做告警；抓取目标见 infrastructure/monitoring/prometheus.yml
+  prometheus:
+    profiles: ["monitoring"]
+    image: prom/prometheus:v3.1.0
+    container_name: jap-prometheus
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # 后端在本机运行时，容器需要通过 host.docker.internal 访问宿主机端口
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - jap-network
+
+  # ------------------------- 监控：Grafana -------------------------
+  grafana:
+    profiles: ["monitoring"]
+    image: grafana/grafana:11.4.0
+    container_name: jap-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      TZ: ${TZ:-Asia/Shanghai}
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - jap-network
+
+volumes:
+  mysql-data:
+  redis-data:
+  nacos-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  jap-network:
+    driver: bridge

@@ -1,0 +1,40 @@
+# =====================================================================
+# Prometheus 抓取配置
+#
+# 抓取目标：
+#   默认按「后端与监控同在 compose 网络内」配置，用「服务名:容器端口」抓取；
+#   若后端改回宿主机（IDEA / 命令行 / jar）启动，则换回 host.docker.internal:<端口>。
+#   例如 gateway-service:8080、user-service:8081。
+#
+# 暴露的端点由各服务的 management.endpoints.web.exposure.include 控制，
+# 只开放 health / info / metrics / prometheus。
+# =====================================================================
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: gateway-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [ 'gateway-service:8080' ]
+
+  - job_name: user-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [ 'user-service:8081' ]
+
+  - job_name: ai-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [ 'ai-service:8082' ]
+
+  - job_name: search-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [ 'search-service:8083' ]
+
+  - job_name: project-service
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: [ 'project-service:8084' ]

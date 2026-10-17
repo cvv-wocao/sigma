@@ -1,0 +1,19 @@
+# 构建上下文精简：排除无需进入镜像的内容
+.git
+.idea
+.run
+.vscode
+*.iml
+
+**/target
+frontend/node_modules
+frontend/dist
+
+docs
+tests
+scripts
+logs
+*.log
+
+.env
+.env.local

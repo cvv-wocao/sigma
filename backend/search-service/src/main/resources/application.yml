@@ -1,0 +1,90 @@
+# =====================================================================
+# search-service 配置模板（8083）
+# =====================================================================
+server:
+  port: 8083
+
+spring:
+  application:
+    name: search-service
+  config:
+    import:
+      # 本机开发的值统一写在项目根目录的 .env.local（已在 .gitignore 中，不会提交）
+      # 两个候选路径分别覆盖「工作目录 = 项目根」与「工作目录 = 模块目录」两种情况
+      - optional:file:./.env.local[.properties]
+      - optional:file:../../.env.local[.properties]
+      # 从 Nacos 拉取自身配置（团队/生产推荐用这里集中管理），Nacos 不可用时不阻塞启动
+      - optional:nacos:${spring.application.name}.yaml
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      discovery:
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+      config:
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        file-extension: yaml
+
+# ===== 可观测性：actuator + Prometheus =====
+# 指标端点只在宿主机 / 容器网络内可访问：网关只有 /api/** 路由，外部无法从 8080 访问 /actuator/**
+management:
+  endpoints:
+    web:
+      exposure:
+        # 只暴露必要端点；env / beans / configprops 等会泄露配置，保持关闭
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      # 开发期展示组件明细（数据库、Redis 等）；上线前改为 when-authorized
+      show-details: always
+  metrics:
+    tags:
+      # 所有指标带上服务名，Prometheus 里可按 application 维度筛选
+      application: ${spring.application.name}
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+logging:
+  level:
+    cn.itcast.agent: debug
+
+# ===== 外部数据源：Gitee =====
+# 仓库详情与分支列表接口免鉴权；关键词搜索接口必须携带 access_token，否则 Gitee 只返回空数组
+# 令牌获取：Gitee 官网 -> 设置 -> 私人令牌；填到项目根目录 .env.local 的 GITEE_ACCESS_TOKEN
+gitee:
+  base-url: ${GITEE_BASE_URL:https://gitee.com}
+  access-token: ${GITEE_ACCESS_TOKEN:}
+
+# ===== 检索来源策略 =====
+# provider：主检索来源，取值 github / gitee。
+#   为什么默认 github：Gitee 官方 /v5/search/repositories 当前对任何关键词都返回空数组，
+#   无法承担「全网检索」；GitHub 检索接口稳定，且返回 star / license / topics / updated_at，
+#   正好是 AI 推荐排序需要的元数据。
+#   Gitee 仍保留为备用来源与仓库详情来源（收藏过的 Gitee 仓库详情 / 分支走它）。
+# fallback-enabled：主来源无结果时是否依次尝试其余来源。
+# max-results：批量检索去重后的候选上限（推荐流水线的候选池规模）。
+# max-description-length：简介清洗后的最大字符数，超出截断。
+#   GitHub 检索是对仓库全文做词匹配的，有一批 SEO 垃圾仓库会把几万字符的填充空白 /
+#   乱码塞进 description 来刷排名，不截断的话前端卡片就是一屏乱码，提示词也会被撑爆。
+# spam-description-length / spam-filter-enabled：简介原始长度超过阈值（或含大段连续空白）
+#   即判定为关键词堆砌仓库，直接从检索结果里剔除。
+# max-readme-length：README 清洗后的最大字符数（只用于「项目深读」的提示词）。
+search:
+  provider: ${SEARCH_PROVIDER:github}
+  fallback-enabled: ${SEARCH_FALLBACK_ENABLED:true}
+  max-results: ${SEARCH_MAX_RESULTS:30}
+  max-description-length: ${SEARCH_MAX_DESCRIPTION_LENGTH:200}
+  spam-description-length: ${SEARCH_SPAM_DESCRIPTION_LENGTH:1000}
+  spam-filter-enabled: ${SEARCH_SPAM_FILTER_ENABLED:true}
+  max-readme-length: ${SEARCH_MAX_README_LENGTH:4000}
+
+# ===== 外部数据源：GitHub =====
+# token 非必填：未认证时检索接口限流 10 次/分钟，配置后 30 次/分钟（推荐配一个）。
+# 令牌获取：GitHub -> Settings -> Developer settings -> Personal access tokens，
+# 只需 public_repo 读权限；填到项目根目录 .env.local 的 GITHUB_TOKEN。
+github:
+  base-url: ${GITHUB_BASE_URL:https://api.github.com}
+  token: ${GITHUB_TOKEN:}

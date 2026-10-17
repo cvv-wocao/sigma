@@ -1,0 +1,156 @@
+# =====================================================================
+# ai-service 配置模板（8082）
+#
+# 模型：DeepSeek（Spring AI 官方 deepseek starter）
+# 密钥：从 .env.local 或环境变量 DEEPSEEK_API_KEY 注入，不要写死在本文件里
+# =====================================================================
+server:
+  port: 8082
+
+spring:
+  application:
+    name: ai-service
+
+  # ===== MySQL：对话历史落库（ai_conversation / ai_message）=====
+  # Agent 的运行时上下文仍由下面的 Redis 记忆提供，两者互不影响
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:127.0.0.1}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:java_agent_platform}?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:root}
+    hikari:
+      minimum-idle: 2
+      maximum-pool-size: 10
+      connection-timeout: 30000
+
+  # ===== Spring AI：DeepSeek =====
+  ai:
+    deepseek:
+      api-key: ${DEEPSEEK_API_KEY:sk-placeholder}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      chat:
+        options:
+          # deepseek-chat 为官方通用对话模型别名，也可换成 deepseek-v4-pro 等
+          model: ${DEEPSEEK_CHAT_MODEL:deepseek-chat}
+          temperature: 0.7
+
+  # ===== Redis：Agent 会话记忆（短期上下文）=====
+  data:
+    redis:
+      host: ${REDIS_HOST:127.0.0.1}
+      port: ${REDIS_PORT:6380}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 3000ms
+
+  config:
+    import:
+      # 本机开发的值统一写在项目根目录的 .env.local（已在 .gitignore 中，不会提交）
+      # 两个候选路径分别覆盖「工作目录 = 项目根」与「工作目录 = 模块目录」两种情况
+      - optional:file:./.env.local[.properties]
+      - optional:file:../../.env.local[.properties]
+      # 从 Nacos 拉取自身配置（团队/生产推荐用这里集中管理），Nacos 不可用时不阻塞启动
+      - optional:nacos:${spring.application.name}.yaml
+
+  cloud:
+    nacos:
+      server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+      discovery:
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+      config:
+        namespace: ${NACOS_NAMESPACE:}
+        group: ${NACOS_GROUP:DEFAULT_GROUP}
+        file-extension: yaml
+
+# ===== MyBatis-Plus =====
+mybatis-plus:
+  # 复杂 SQL 的 XML 文件放在 resources/mapper 下（单表 CRUD 用 BaseMapper，无需 XML）
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: cn.itcast.agent.ai.entity
+  configuration:
+    # 下划线字段自动映射为驼峰属性：create_time -> createTime
+    map-underscore-to-camel-case: true
+    # 开发期打印 SQL，便于观察实际执行的语句；上线前请改为 Slf4jImpl
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    banner: false
+    db-config:
+      id-type: auto
+
+# ===== 可观测性：actuator + Prometheus =====
+# 指标端点只在宿主机 / 容器网络内可访问：网关只有 /api/** 路由，外部无法从 8080 访问 /actuator/**
+management:
+  endpoints:
+    web:
+      exposure:
+        # 只暴露必要端点；env / beans / configprops 等会泄露配置，保持关闭
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      # 开发期展示组件明细（数据库、Redis 等）；上线前改为 when-authorized
+      show-details: always
+  metrics:
+    tags:
+      # 所有指标带上服务名，Prometheus 里可按 application 维度筛选
+      application: ${spring.application.name}
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+logging:
+  level:
+    cn.itcast.agent: debug
+
+# ===== Agent 短期记忆（会话记忆）=====
+# 记忆存储在 Redis，key 形如 ai:chat:memory:{userId}:{conversationId}
+ai:
+  chat:
+    memory:
+      # 单个会话最多保留多少条消息（用户消息 + 助手回复合计），超出后只保留最近的若干条
+      max-messages: 20
+      # 会话记忆存活时间（滑动过期），避免 Redis 无限增长；设为 0 表示不过期
+      ttl: 24h
+      # Redis key 前缀
+      key-prefix: "ai:chat:memory:"
+
+  # ===== 长期记忆（跨会话的用户事实库，持久化在 MySQL 的 ai_user_memory）=====
+  # 与上面的短期记忆分工：短期记忆是「本次会话说了什么」（自动裁剪、会过期），
+  # 长期记忆是「这个用户是谁」（抽取稳定事实、跨会话保留、按相关度回填提示词）。
+  memory:
+    # 总开关：关闭后不再抽取也不再注入，短期记忆不受影响
+    enabled: ${MEMORY_ENABLED:true}
+    # 每轮最多注入几条长期记忆
+    recall-top-k: ${MEMORY_RECALL_TOP_K:6}
+    # 打分前按「重要度 + 更新时间」取多少条作为候选池
+    candidate-limit: ${MEMORY_CANDIDATE_LIMIT:100}
+    # 低于该分数的记忆不注入，避免把无关内容塞进提示词
+    min-score: 0.2
+    # 单轮问答最多抽取几条新记忆
+    extract-max-items: 3
+    # 单用户记忆总量上限，超出后按分数淘汰最差的
+    max-per-user: 200
+    # 可选：配置后启用向量召回（任意 OpenAI 兼容的 embeddings 接口都可以）
+    # 四项全部填齐才算启用，缺任意一项就退回「关键词 + 重要度 + 时效」打分
+    embedding:
+      enabled: ${MEMORY_EMBEDDING_ENABLED:false}
+      base-url: ${MEMORY_EMBEDDING_BASE_URL:}
+      api-key: ${MEMORY_EMBEDDING_API_KEY:}
+      model: ${MEMORY_EMBEDDING_MODEL:}
+      timeout: ${MEMORY_EMBEDDING_TIMEOUT:10s}
+
+  # ===== AI 推荐流水线（POST /api/ai/recommend）=====
+  # max-keywords       需求解析后最多用几个关键词去召回（越多召回越宽，也越慢）
+  # per-keyword        每个关键词向 search-service 要多少条
+  # candidate-pool-max 送入模型排序的候选上限，直接决定排序提示词的体积
+  # top-n              默认返回几条推荐
+  recommend:
+    max-keywords: ${RECOMMEND_MAX_KEYWORDS:6}
+    per-keyword: ${RECOMMEND_PER_KEYWORD:15}
+    candidate-pool-max: ${RECOMMEND_CANDIDATE_POOL_MAX:30}
+    top-n: ${RECOMMEND_TOP_N:5}
+    # deep-read-max   初筛后最多对多少条候选取 README 正文做「项目深读」；每条都是一次外部接口调用
+    # readme-max-length 每条 README 截断到多少字符后进入排序提示词
+    deep-read-max: ${RECOMMEND_DEEP_READ_MAX:12}
+    readme-max-length: ${RECOMMEND_README_MAX_LENGTH:1500}

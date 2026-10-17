@@ -1,0 +1,7 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="后端全栈 (user + gateway)" type="CompoundRunConfigurationType" factoryName="Compound">
+    <toRun name="gateway-service" type="SpringBootApplicationConfigurationType" />
+    <toRun name="user-service" type="SpringBootApplicationConfigurationType" />
+    <method v="2" />
+  </configuration>
+</component>

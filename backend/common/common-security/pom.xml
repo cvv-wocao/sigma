@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cn.itcast.agent</groupId>
+        <artifactId>backend</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+        <relativePath>../../pom.xml</relativePath>
+    </parent>
+
+    <artifactId>common-security</artifactId>
+    <packaging>jar</packaging>
+
+    <name>common-security</name>
+    <description>公共安全模块：令牌签发与解析、登录用户模型等跨服务复用能力</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>cn.itcast.agent</groupId>
+            <artifactId>common-core</artifactId>
+        </dependency>
+        <!--
+            标记为 optional：本模块的 JWT 能力（JwtTokenProvider 等）只依赖 jjwt，与 Web 栈无关。
+            网关是 WebFlux，若把 Servlet 版的安全自动配置传递过去，会导致所有请求默认被拦截。
+            因此需要 Spring Security 的服务（如 user-service）必须自己显式声明该依赖。
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- JWT：与具体 Web 栈无关，Servlet 与 WebFlux 服务均可复用 -->
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+    </dependencies>
+</project>
