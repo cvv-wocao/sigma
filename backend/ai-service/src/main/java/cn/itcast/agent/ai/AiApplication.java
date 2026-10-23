@@ -4,6 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.cloud.openfeign.EnableFeignClients;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * AI 智能体服务启动类。
@@ -13,6 +14,7 @@ import org.springframework.cloud.openfeign.EnableFeignClients;
 @SpringBootApplication
 @ConfigurationPropertiesScan
 @EnableFeignClients(basePackages = "cn.itcast.agent")
+@EnableScheduling
 public class AiApplication {
 
     public static void main(String[] args) {

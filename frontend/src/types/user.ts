@@ -6,6 +6,7 @@ export interface UserInfo {
   email?: string | null
   phone?: string | null
   avatar?: string | null
+  role?: 'ADMIN' | 'USER'
   createTime?: string | null
 }
 
@@ -16,6 +17,14 @@ export interface RegisterParams {
   confirmPassword: string
   nickname?: string
   email?: string
+}
+
+/** 当前用户可自行修改的资料 */
+export interface UpdateProfileParams {
+  nickname: string
+  email?: string
+  phone?: string
+  avatar?: string
 }
 
 /** 登录入参 */

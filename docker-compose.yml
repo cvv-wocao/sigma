@@ -29,7 +29,7 @@ services:
       - --collation-server=utf8mb4_general_ci
       - --mysql-native-password=ON
     ports:
-      - "${MYSQL_PORT:-3307}:3306"
+      - "127.0.0.1:${MYSQL_PORT:-3307}:3306"
     volumes:
       - mysql-data:/var/lib/mysql
       # 首次初始化时按文件名顺序执行：01-schema.sql 建库，02-user.sql 建用户表，03-ai.sql 建对话历史表
@@ -48,13 +48,15 @@ services:
     image: redis:7.4-alpine
     container_name: jap-redis
     restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis123}
     command:
       - redis-server
       - /usr/local/etc/redis/redis.conf
       - --requirepass
       - ${REDIS_PASSWORD:-redis123}
     ports:
-      - "${REDIS_PORT:-6380}:6379"
+      - "127.0.0.1:${REDIS_PORT:-6380}:6379"
     volumes:
       - redis-data:/data
       - ./infrastructure/redis/conf/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -81,8 +83,8 @@ services:
       JVM_XMX: 512m
       TZ: ${TZ:-Asia/Shanghai}
     ports:
-      - "${NACOS_HTTP_PORT:-8848}:8848"
-      - "${NACOS_GRPC_PORT:-9848}:9848"
+      - "127.0.0.1:${NACOS_HTTP_PORT:-8848}:8848"
+      - "127.0.0.1:${NACOS_GRPC_PORT:-9848}:9848"
     volumes:
       - nacos-data:/home/nacos/data
       # 配置数据挂载说明见 infrastructure/nacos/README.md
@@ -125,7 +127,7 @@ services:
       JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-120}
       TZ: ${TZ:-Asia/Shanghai}
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     depends_on:
       mysql:
         condition: service_healthy
@@ -147,7 +149,7 @@ services:
       NACOS_SERVER_ADDR: nacos:8848
       TZ: ${TZ:-Asia/Shanghai}
     ports:
-      - "${GATEWAY_HTTP_PORT:-8080}:8080"
+      - "127.0.0.1:${GATEWAY_HTTP_PORT:-8080}:8080"
     depends_on:
       nacos:
         condition: service_started
@@ -177,10 +179,11 @@ services:
       GITEE_ACCESS_TOKEN: ${GITEE_ACCESS_TOKEN:-}
       SEARCH_PROVIDER: ${SEARCH_PROVIDER:-github}
       GITHUB_BASE_URL: ${GITHUB_BASE_URL:-https://api.github.com}
+      GITHUB_WEB_BASE_URL: ${GITHUB_WEB_BASE_URL:-https://github.com}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       TZ: ${TZ:-Asia/Shanghai}
     ports:
-      - "8083:8083"
+      - "127.0.0.1:8083:8083"
     depends_on:
       nacos:
         condition: service_started
@@ -209,6 +212,32 @@ services:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       DEEPSEEK_CHAT_MODEL: ${DEEPSEEK_CHAT_MODEL:-deepseek-chat}
+      # 用户自带 API Key 的落库加密口令；生产环境必须替换
+      AI_MODEL_ENCRYPTION_KEY: ${AI_MODEL_ENCRYPTION_KEY:-local-dev-only-change-me}
+      # 平台模型 Token 单价（元 / 百万 Token），普通用户按实际用量扣余额
+      AI_INPUT_PRICE_PER_MILLION_YUAN: ${AI_INPUT_PRICE_PER_MILLION_YUAN:-2.0}
+      AI_OUTPUT_PRICE_PER_MILLION_YUAN: ${AI_OUTPUT_PRICE_PER_MILLION_YUAN:-8.0}
+      # 微信 Native 扫码充值；证书目录只读挂载，未启用时留空即可
+      WECHAT_PAY_ENABLED: ${WECHAT_PAY_ENABLED:-false}
+      WECHAT_PAY_APP_ID: ${WECHAT_PAY_APP_ID:-}
+      WECHAT_PAY_MCH_ID: ${WECHAT_PAY_MCH_ID:-}
+      WECHAT_PAY_API_V3_KEY: ${WECHAT_PAY_API_V3_KEY:-}
+      WECHAT_PAY_MERCHANT_SERIAL_NUMBER: ${WECHAT_PAY_MERCHANT_SERIAL_NUMBER:-}
+      WECHAT_PAY_PRIVATE_KEY_PATH: ${WECHAT_PAY_PRIVATE_KEY_PATH:-/run/secrets/wechat-pay/apiclient_key.pem}
+      WECHAT_PAY_PLATFORM_CERT_PATH: ${WECHAT_PAY_PLATFORM_CERT_PATH:-/run/secrets/wechat-pay/platform_cert.pem}
+      WECHAT_PAY_NOTIFY_URL: ${WECHAT_PAY_NOTIFY_URL:-}
+      WECHAT_PAY_DESCRIPTION: ${WECHAT_PAY_DESCRIPTION:-AI 平台 Token 额度充值}
+      WECHAT_PAY_EXPIRE_MINUTES: ${WECHAT_PAY_EXPIRE_MINUTES:-15}
+      # 支付宝当面付：不需要公网回调，应用私钥/支付宝公钥放 infrastructure/alipay/
+      ALIPAY_PAY_ENABLED: ${ALIPAY_PAY_ENABLED:-false}
+      ALIPAY_PAY_APP_ID: ${ALIPAY_PAY_APP_ID:-}
+      ALIPAY_PAY_PRIVATE_KEY_PATH: ${ALIPAY_PAY_PRIVATE_KEY_PATH:-/run/secrets/alipay/app_private_key.pem}
+      ALIPAY_PAY_PUBLIC_KEY_PATH: ${ALIPAY_PAY_PUBLIC_KEY_PATH:-/run/secrets/alipay/alipay_public_key.pem}
+      ALIPAY_PAY_GATEWAY_URL: ${ALIPAY_PAY_GATEWAY_URL:-https://openapi.alipay.com/gateway.do}
+      ALIPAY_PAY_SUBJECT: ${ALIPAY_PAY_SUBJECT:-AI 平台 Token 额度充值}
+      ALIPAY_PAY_EXPIRE_MINUTES: ${ALIPAY_PAY_EXPIRE_MINUTES:-15}
+      ALIPAY_PAY_RECONCILE_INTERVAL_MS: ${ALIPAY_PAY_RECONCILE_INTERVAL_MS:-60000}
+      ALIPAY_PAY_RECONCILE_INITIAL_DELAY_MS: ${ALIPAY_PAY_RECONCILE_INITIAL_DELAY_MS:-30000}
       # 长期记忆：默认只用关键词打分，把下面四项配齐后自动切换到向量召回
       MEMORY_EMBEDDING_ENABLED: ${MEMORY_EMBEDDING_ENABLED:-false}
       MEMORY_EMBEDDING_BASE_URL: ${MEMORY_EMBEDDING_BASE_URL:-}
@@ -216,7 +245,10 @@ services:
       MEMORY_EMBEDDING_MODEL: ${MEMORY_EMBEDDING_MODEL:-}
       TZ: ${TZ:-Asia/Shanghai}
     ports:
-      - "8082:8082"
+      - "127.0.0.1:8082:8082"
+    volumes:
+      - ./infrastructure/wechat-pay:/run/secrets/wechat-pay:ro
+      - ./infrastructure/alipay:/run/secrets/alipay:ro
     depends_on:
       mysql:
         condition: service_healthy
@@ -247,7 +279,7 @@ services:
       NACOS_SERVER_ADDR: nacos:8848
       TZ: ${TZ:-Asia/Shanghai}
     ports:
-      - "8084:8084"
+      - "127.0.0.1:8084:8084"
     depends_on:
       mysql:
         condition: service_healthy
@@ -264,7 +296,7 @@ services:
     container_name: jap-prometheus
     restart: unless-stopped
     ports:
-      - "${PROMETHEUS_PORT:-9090}:9090"
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
@@ -285,7 +317,7 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
       TZ: ${TZ:-Asia/Shanghai}
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     volumes:
       - grafana-data:/var/lib/grafana
     depends_on:

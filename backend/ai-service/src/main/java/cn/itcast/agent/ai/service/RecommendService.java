@@ -20,7 +20,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import tools.jackson.core.JacksonException;
@@ -92,10 +91,10 @@ public class RecommendService {
     /** 单条 README 读取的超时时间（秒），超时即退化为只用元数据 */
     private static final long DEEP_READ_TIMEOUT_SECONDS = 10L;
 
-    private final ChatClient recommendAnalysisChatClient;
-    private final ChatClient recommendRankChatClient;
+    private final UserModelClientProvider userModelClientProvider;
     private final SearchServiceClient searchServiceClient;
     private final ConversationHistoryService conversationHistoryService;
+    private final BillingService billingService;
     private final RecommendProperties properties;
     private final JsonMapper jsonMapper;
     /**
@@ -109,16 +108,16 @@ public class RecommendService {
                 return thread;
             });
 
-    public RecommendService(@Qualifier("recommendAnalysisChatClient") ChatClient recommendAnalysisChatClient,
-                            @Qualifier("recommendRankChatClient") ChatClient recommendRankChatClient,
-                            SearchServiceClient searchServiceClient,
-                            ConversationHistoryService conversationHistoryService,
-                            RecommendProperties properties,
-                            JsonMapper jsonMapper) {
-        this.recommendAnalysisChatClient = recommendAnalysisChatClient;
-        this.recommendRankChatClient = recommendRankChatClient;
+    public RecommendService(UserModelClientProvider userModelClientProvider,
+                                 SearchServiceClient searchServiceClient,
+                                 ConversationHistoryService conversationHistoryService,
+                                 BillingService billingService,
+                                 RecommendProperties properties,
+                                 JsonMapper jsonMapper) {
+        this.userModelClientProvider = userModelClientProvider;
         this.searchServiceClient = searchServiceClient;
         this.conversationHistoryService = conversationHistoryService;
+        this.billingService = billingService;
         this.properties = properties;
         this.jsonMapper = jsonMapper;
     }
@@ -127,15 +126,21 @@ public class RecommendService {
      * @param authenticatedUserId 网关校验 JWT 后写入的用户 ID；
      *                            非空时优先于请求体里的 userId，避免客户端伪造身份串用会话
      */
-    public RecommendVO recommend(RecommendRequest request, String authenticatedUserId) {
+    public RecommendVO recommend(RecommendRequest request, String authenticatedUserId, String authenticatedRole) {
         String conversationId = StringUtils.hasText(request.conversationId())
                 ? request.conversationId().trim()
                 : UUID.randomUUID().toString();
         String userId = StringUtils.hasText(authenticatedUserId) ? authenticatedUserId : request.userId();
         int topN = request.topN() == null ? properties.topN() : request.topN();
+        Long modelUserId = CurrentUser.parseIdOrNull(userId);
+        boolean admin = billingService.isAdmin(modelUserId, authenticatedRole);
+        UserModelClientProvider.ModelRoute analysisRoute = userModelClientProvider.recommendAnalysis(modelUserId);
+        UserModelClientProvider.ModelRoute rankRoute = userModelClientProvider.recommendRank(modelUserId);
 
         // 1) 需求解析
-        ChatResult analysis = chat(recommendAnalysisChatClient, request.message());
+        billingService.requirePlatformAccess(modelUserId, admin, analysisRoute.platformToken());
+        ChatResult analysis = chat(analysisRoute.client(), request.message(), modelUserId, admin,
+                "RECOMMEND_ANALYSIS", analysisRoute.platformToken());
         RequirementPlan plan = normalizePlan(parsePlan(analysis.text()), request.message());
 
         // 2) 多关键词召回
@@ -155,7 +160,9 @@ public class RecommendService {
         if (candidates.isEmpty()) {
             log.info("候选池为空，跳过模型排序：keywords={}", plan.keywords());
         } else {
-            ChatResult ranking = chat(recommendRankChatClient, buildRankPrompt(plan, candidates, topN, readmes));
+            billingService.requirePlatformAccess(modelUserId, admin, rankRoute.platformToken());
+            ChatResult ranking = chat(rankRoute.client(), buildRankPrompt(plan, candidates, topN, readmes),
+                    modelUserId, admin, "RECOMMEND_RANK", rankRoute.platformToken());
             if (StringUtils.hasText(ranking.model())) {
                 model = ranking.model();
             }
@@ -393,8 +400,12 @@ public class RecommendService {
                 trimToNull(plan.license()), trimToNull(plan.notes()));
     }
 
-    private ChatResult chat(ChatClient client, String userPrompt) {
+    private ChatResult chat(ChatClient client, String userPrompt, Long userId, boolean admin,
+                            String scene, boolean platformToken) {
+        long startedAt = System.nanoTime();
         ChatResponse response = client.prompt().user(userPrompt).call().chatResponse();
+        long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
+        billingService.recordUsage(userId, admin, platformToken, scene, response, durationMs);
         if (response == null || response.getResult() == null || response.getResult().getOutput() == null) {
             throw new BusinessException(ErrorCode.SERVER_ERROR, "模型未返回有效结果，请稍后重试");
         }

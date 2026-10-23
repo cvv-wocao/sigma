@@ -21,6 +21,9 @@ public class User implements Serializable {
     /** 状态：禁用 */
     public static final int STATUS_DISABLED = 0;
 
+    public static final String ROLE_ADMIN = "ADMIN";
+    public static final String ROLE_USER = "USER";
+
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;
 
@@ -39,6 +42,9 @@ public class User implements Serializable {
     private String avatar;
 
     private Integer status;
+
+    /** 角色：ADMIN / USER */
+    private String role;
 
     private LocalDateTime createTime;
 
@@ -106,6 +112,14 @@ public class User implements Serializable {
 
     public void setStatus(Integer status) {
         this.status = status;
+    }
+
+    public String getRole() {
+        return role;
+    }
+
+    public void setRole(String role) {
+        this.role = role;
     }
 
     public LocalDateTime getCreateTime() {

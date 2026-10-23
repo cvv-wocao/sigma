@@ -6,6 +6,7 @@ import cn.itcast.agent.common.core.result.Result;
 import cn.itcast.agent.common.security.jwt.LoginUser;
 import cn.itcast.agent.user.dto.LoginRequest;
 import cn.itcast.agent.user.dto.RegisterRequest;
+import cn.itcast.agent.user.dto.UpdateProfileRequest;
 import cn.itcast.agent.user.service.UserService;
 import cn.itcast.agent.user.vo.LoginVO;
 import cn.itcast.agent.user.vo.UserInfoVO;
@@ -14,6 +15,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -54,6 +56,14 @@ public class UserController {
     @GetMapping("/me")
     public Result<UserInfoVO> currentUser() {
         return Result.success(userService.getCurrentUser(currentUserId()));
+    }
+
+    /**
+     * 更新当前登录用户资料：PUT /api/user/me
+     */
+    @PutMapping("/me")
+    public Result<UserInfoVO> updateCurrentUser(@Valid @RequestBody UpdateProfileRequest request) {
+        return Result.success(userService.updateCurrentUser(currentUserId(), request));
     }
 
     private Long currentUserId() {

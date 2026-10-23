@@ -1859,6 +1859,18 @@ code {
   margin-left: auto;
 }
 
+/* 下载与收藏放在同一组里，避免两个自带 margin-left:auto 的按钮把卡片底部撑散 */
+.repo-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.repo-actions .btn {
+  margin-left: 0;
+}
+
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -1983,6 +1995,7 @@ code {
 
 .proj-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding-top: 12px;
   border-top: 1px dashed var(--line);
@@ -2617,6 +2630,179 @@ code {
 }
 
 /* ---------- 检索结果卡片：查看详情入口 ---------- */
+.release-empty {
+  padding: 12px 14px;
+  font-size: 12.5px;
+  color: var(--text-3);
+  background: var(--surface-2);
+  border: 1px dashed var(--line);
+  border-radius: var(--r);
+}
+
+.release-list {
+  display: grid;
+  gap: 12px;
+}
+
+.release-card {
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.release-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.release-link {
+  margin-left: auto;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.release-notes {
+  max-height: 160px;
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+}
+
+.release-assets {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.release-asset {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  color: var(--text);
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-line);
+  border-radius: var(--r-sm);
+  transition: background 0.16s, border-color 0.16s;
+}
+
+.release-asset:hover {
+  color: var(--brand-700);
+  background: #e2efff;
+  border-color: var(--brand);
+}
+
+.release-asset-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.release-asset-meta {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+.repo-tree {
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line-2);
+  cursor: pointer;
+}
+
+.file-row:last-child {
+  border-bottom: 0;
+}
+
+.file-row:hover {
+  background: var(--brand-soft);
+}
+
+.file-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-meta,
+.file-arrow {
+  flex: none;
+  color: var(--text-3);
+}
+
+.file-meta {
+  font-size: 11.5px;
+}
+
+.file-arrow {
+  transform: rotate(0deg);
+}
+
+.file-preview {
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+}
+
+.file-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--line);
+}
+
+.file-preview-head .btn {
+  margin-left: auto;
+}
+
+.file-preview-body {
+  max-height: 420px;
+  overflow: auto;
+}
+
+.file-preview-body pre {
+  margin: 0;
+  padding: 14px 16px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .repo-open {
   display: inline-flex;
   align-items: center;

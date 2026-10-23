@@ -21,6 +21,7 @@ public class JwtTokenProvider {
     private static final String CLAIM_USER_ID = "userId";
     private static final String CLAIM_USERNAME = "username";
     private static final String CLAIM_NICKNAME = "nickname";
+    private static final String CLAIM_ROLE = "role";
 
     private static final int MIN_SECRET_BYTES = 32;
 
@@ -48,6 +49,7 @@ public class JwtTokenProvider {
                 .claim(CLAIM_USER_ID, loginUser.id())
                 .claim(CLAIM_USERNAME, loginUser.username())
                 .claim(CLAIM_NICKNAME, loginUser.nickname())
+                .claim(CLAIM_ROLE, loginUser.role())
                 .issuer(properties.getIssuer())
                 .issuedAt(issuedAt)
                 .expiration(expiration)
@@ -66,10 +68,12 @@ public class JwtTokenProvider {
                     .parseSignedClaims(token)
                     .getPayload();
             Number userId = claims.get(CLAIM_USER_ID, Number.class);
+            String role = claims.get(CLAIM_ROLE, String.class);
             return new LoginUser(
                     userId == null ? null : userId.longValue(),
                     claims.get(CLAIM_USERNAME, String.class),
-                    claims.get(CLAIM_NICKNAME, String.class));
+                    claims.get(CLAIM_NICKNAME, String.class),
+                    role);
         } catch (ExpiredJwtException e) {
             throw new BusinessException(ErrorCode.TOKEN_EXPIRED);
         } catch (JwtException | IllegalArgumentException e) {

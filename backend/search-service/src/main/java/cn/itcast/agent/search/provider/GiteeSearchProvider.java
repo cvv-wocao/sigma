@@ -2,6 +2,10 @@ package cn.itcast.agent.search.provider;
 
 import cn.itcast.agent.common.api.dto.GiteeBranch;
 import cn.itcast.agent.common.api.dto.GiteeRepository;
+import cn.itcast.agent.common.api.dto.RepositoryFileContent;
+import cn.itcast.agent.common.api.dto.RepositoryFileEntry;
+import cn.itcast.agent.common.api.dto.RepositoryRelease;
+import cn.itcast.agent.search.client.RepositoryArchiveStream;
 import cn.itcast.agent.search.client.GiteeClient;
 import cn.itcast.agent.search.config.GiteeProperties;
 import org.slf4j.Logger;
@@ -67,6 +71,26 @@ public class GiteeSearchProvider implements RepositorySearchProvider {
     @Override
     public List<GiteeBranch> getBranches(String owner, String repo) {
         return giteeClient.getBranches(owner, repo);
+    }
+
+    @Override
+    public List<RepositoryRelease> getReleases(String owner, String repo, int limit) {
+        return giteeClient.getReleases(owner, repo, limit);
+    }
+
+    @Override
+    public List<RepositoryFileEntry> listFiles(String owner, String repo, String path, String branch) {
+        return giteeClient.listFiles(owner, repo, path, branch);
+    }
+
+    @Override
+    public RepositoryFileContent readFile(String owner, String repo, String path, String branch) {
+        return giteeClient.readFile(owner, repo, path, branch);
+    }
+
+    @Override
+    public RepositoryArchiveStream openArchive(String owner, String repo, String branch) {
+        return giteeClient.openArchive(owner, repo, branch);
     }
 
     private List<GiteeRepository> mark(List<GiteeRepository> repositories) {

@@ -6,6 +6,7 @@ import cn.itcast.agent.common.security.jwt.JwtTokenProvider;
 import cn.itcast.agent.common.security.jwt.LoginUser;
 import cn.itcast.agent.user.dto.LoginRequest;
 import cn.itcast.agent.user.dto.RegisterRequest;
+import cn.itcast.agent.user.dto.UpdateProfileRequest;
 import cn.itcast.agent.user.entity.User;
 import cn.itcast.agent.user.mapper.UserMapper;
 import cn.itcast.agent.user.service.UserService;
@@ -59,6 +60,7 @@ public class UserServiceImpl implements UserService {
         user.setNickname(StringUtils.hasText(request.nickname()) ? request.nickname().trim() : username);
         user.setEmail(StringUtils.hasText(request.email()) ? request.email().trim() : null);
         user.setStatus(User.STATUS_ENABLED);
+        user.setRole(User.ROLE_USER);
 
         userMapper.insert(user);
         log.info("注册成功：userId={}, username={}", user.getId(), user.getUsername());
@@ -76,7 +78,8 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(ErrorCode.USER_DISABLED);
         }
 
-        LoginUser loginUser = new LoginUser(user.getId(), user.getUsername(), user.getNickname());
+        String role = user.getRole() == null || user.getRole().isBlank() ? User.ROLE_USER : user.getRole();
+        LoginUser loginUser = new LoginUser(user.getId(), user.getUsername(), user.getNickname(), role);
         String token = jwtTokenProvider.createToken(loginUser);
         log.info("登录成功：userId={}, username={}", user.getId(), user.getUsername());
         return new LoginVO(token, TOKEN_TYPE, jwtTokenProvider.getExpireSeconds(), UserInfoVO.from(user));
@@ -89,5 +92,28 @@ public class UserServiceImpl implements UserService {
             throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
         }
         return UserInfoVO.from(user);
+    }
+
+    @Override
+    public UserInfoVO updateCurrentUser(Long userId, UpdateProfileRequest request) {
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "用户不存在");
+        }
+
+        // 使用显式 set 而不是 updateById：空字符串代表清空资料，必须能够把数据库列写成 NULL。
+        userMapper.update(null, Wrappers.<User>lambdaUpdate()
+                .eq(User::getId, userId)
+                .set(User::getNickname, request.nickname().trim())
+                .set(User::getEmail, normalizeOptional(request.email()))
+                .set(User::getPhone, normalizeOptional(request.phone()))
+                .set(User::getAvatar, normalizeOptional(request.avatar())));
+
+        log.info("用户资料更新成功：userId={}, username={}", userId, user.getUsername());
+        return UserInfoVO.from(userMapper.selectById(userId));
+    }
+
+    private String normalizeOptional(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 }

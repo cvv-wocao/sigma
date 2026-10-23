@@ -18,6 +18,8 @@ public final class AuthHeaders {
     public static final String USERNAME = "X-Username";
     /** 昵称 */
     public static final String NICKNAME = "X-User-Nickname";
+    /** 角色：ADMIN / USER */
+    public static final String USER_ROLE = "X-User-Role";
 
     private AuthHeaders() {
     }

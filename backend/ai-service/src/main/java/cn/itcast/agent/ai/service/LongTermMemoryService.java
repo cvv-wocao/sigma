@@ -40,8 +40,9 @@ public interface LongTermMemoryService {
      * @param conversationId 会话标识，记录在记忆的来源字段上便于追溯
      * @param question       本轮用户问题
      * @param answer         本轮助手回答
+     * @param admin          是否管理员；管理员使用平台模型时免扣费
      */
-    void remember(Long userId, String conversationId, String question, String answer);
+    void remember(Long userId, String conversationId, String question, String answer, boolean admin);
 
     /** 查询当前用户的长期记忆，按重要度与更新时间排序 */
     List<MemoryVO> list(Long userId);

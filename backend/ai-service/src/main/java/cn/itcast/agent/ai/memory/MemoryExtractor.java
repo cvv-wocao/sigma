@@ -2,12 +2,12 @@ package cn.itcast.agent.ai.memory;
 
 import cn.itcast.agent.ai.config.MemoryProperties;
 import cn.itcast.agent.ai.entity.UserMemory;
+import cn.itcast.agent.ai.service.BillingService;
+import cn.itcast.agent.ai.service.UserModelClientProvider;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.model.ChatResponse;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import tools.jackson.core.type.TypeReference;
@@ -60,14 +60,17 @@ public class MemoryExtractor {
     private static final int MAX_IMPORTANCE = 5;
     private static final int DEFAULT_IMPORTANCE = 3;
 
-    private final ChatClient memoryExtractionChatClient;
+    private final UserModelClientProvider userModelClientProvider;
+    private final BillingService billingService;
     private final JsonMapper jsonMapper;
     private final MemoryProperties properties;
 
-    public MemoryExtractor(@Qualifier("memoryExtractionChatClient") ChatClient memoryExtractionChatClient,
+    public MemoryExtractor(UserModelClientProvider userModelClientProvider,
+                           BillingService billingService,
                            JsonMapper jsonMapper,
                            MemoryProperties properties) {
-        this.memoryExtractionChatClient = memoryExtractionChatClient;
+        this.userModelClientProvider = userModelClientProvider;
+        this.billingService = billingService;
         this.jsonMapper = jsonMapper;
         this.properties = properties;
     }
@@ -75,22 +78,30 @@ public class MemoryExtractor {
     /**
      * 抽取本轮问答里值得长期记住的信息。
      *
+     * @param userId           当前用户 ID，用于选择用户自己的模型；为空时使用平台默认模型
      * @param existingContents 该用户已有的记忆正文，交给模型避免重复抽取
      * @param question         本轮用户问题
      * @param answer           本轮助手回答
+     * @param admin            是否管理员；管理员使用平台模型时免扣费
      * @return 归一化后的新记忆；没有可记的内容、模型输出不合法或调用失败时返回空列表
      */
-    public List<MemoryDraft> extract(List<String> existingContents, String question, String answer) {
+    public List<MemoryDraft> extract(Long userId, List<String> existingContents, String question, String answer,
+                                     boolean admin) {
         if (!properties.active()) {
             return List.of();
         }
         List<String> existing = existingContents == null ? List.of() : existingContents;
         String raw;
         try {
-            ChatResponse response = memoryExtractionChatClient.prompt()
+            UserModelClientProvider.ModelRoute route = userModelClientProvider.memoryExtraction(userId);
+            billingService.requirePlatformAccess(userId, admin, route.platformToken());
+            long startedAt = System.nanoTime();
+            ChatResponse response = route.client().prompt()
                     .user(buildPrompt(existing, question, answer))
                     .call()
                     .chatResponse();
+            long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
+            billingService.recordUsage(userId, admin, route.platformToken(), "MEMORY_EXTRACT", response, durationMs);
             raw = textOf(response);
         } catch (Exception e) {
             log.warn("长期记忆抽取调用失败，本轮跳过：{}", e.getMessage());

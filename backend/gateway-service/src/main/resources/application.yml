@@ -114,3 +114,5 @@ agent:
     whitelist:
       - /api/user/register
       - /api/user/login
+      # 微信支付回调由微信服务器直接调用，使用 API v3 签名验真，不携带用户 JWT
+      - /api/ai/wallet/wechat/notify

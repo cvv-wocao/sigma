@@ -41,8 +41,10 @@ public class AiController {
      * 对外：POST /api/ai/chat
      */
     @PostMapping("/chat")
-    public Result<ChatVO> chat(@Valid @RequestBody ChatRequest request) {
-        return Result.success(chatService.chat(request.message()));
+    public Result<ChatVO> chat(@Valid @RequestBody ChatRequest request,
+                               @RequestHeader(value = AuthHeaders.USER_ID, required = false) String authenticatedUserId,
+                               @RequestHeader(value = AuthHeaders.USER_ROLE, required = false) String authenticatedRole) {
+        return Result.success(chatService.chat(request.message(), authenticatedUserId, authenticatedRole));
     }
 
     /**
@@ -55,8 +57,9 @@ public class AiController {
      */
     @PostMapping("/agent")
     public Result<AgentVO> agent(@Valid @RequestBody AgentRequest request,
-                                 @RequestHeader(value = AuthHeaders.USER_ID, required = false) String authenticatedUserId) {
-        return Result.success(agentService.agent(request, authenticatedUserId));
+                                 @RequestHeader(value = AuthHeaders.USER_ID, required = false) String authenticatedUserId,
+                               @RequestHeader(value = AuthHeaders.USER_ROLE, required = false) String authenticatedRole) {
+        return Result.success(agentService.agent(request, authenticatedUserId, authenticatedRole));
     }
 
     /**
@@ -68,7 +71,8 @@ public class AiController {
      */
     @PostMapping("/recommend")
     public Result<RecommendVO> recommend(@Valid @RequestBody RecommendRequest request,
-                                        @RequestHeader(value = AuthHeaders.USER_ID, required = false) String authenticatedUserId) {
-        return Result.success(recommendService.recommend(request, authenticatedUserId));
+                                        @RequestHeader(value = AuthHeaders.USER_ID, required = false) String authenticatedUserId,
+                               @RequestHeader(value = AuthHeaders.USER_ROLE, required = false) String authenticatedRole) {
+        return Result.success(recommendService.recommend(request, authenticatedUserId, authenticatedRole));
     }
 }

@@ -23,6 +23,8 @@ public enum ErrorCode {
 
     PROJECT_ALREADY_SAVED(1101, "该项目已在收藏列表中"),
 
+    AI_BALANCE_INSUFFICIENT(1201, "平台额度不足，请充值或配置自己的模型 API"),
+
     SERVER_ERROR(500, "服务器内部错误");
 
     private final int code;

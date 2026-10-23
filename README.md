@@ -70,6 +70,7 @@ java-agent-platform/
 | POST | `/api/user/register` | `/user/register` | 否 | 注册，返回用户信息 |
 | POST | `/api/user/login` | `/user/login` | 否 | 登录，返回 JWT 令牌 + 用户信息 |
 | GET | `/api/user/me` | `/user/me` | 是 | 当前登录用户信息，需 `Authorization: Bearer <token>` |
+| PUT | `/api/user/me` | `/user/me` | 是 | 修改当前用户昵称、邮箱、手机号和头像地址 |
 
 统一响应结构（`common-core` 的 `Result`）：
 
@@ -88,6 +89,7 @@ java-agent-platform/
 - **密码**：`BCryptPasswordEncoder` 加密后入库，任何接口都不返回密码（实体 `password` 字段加了 `@JsonIgnore`）。
 - **令牌**：JWT（HMAC 签名，算法由密钥长度决定：48 字节及以上自动使用 HS384），载荷含 `userId` / `username` / `nickname`；密钥与有效期通过 `agent.auth.jwt.*` 配置（环境变量 `JWT_SECRET`、`JWT_EXPIRE_MINUTES`）。
 - **鉴权**：Spring Security 无状态模式，自定义 `JwtAuthenticationFilter` 解析令牌写入安全上下文；注册、登录接口放行，其余接口 401。
+- **个人资料**：`PUT /api/user/me` 只能修改当前令牌对应的账号，用户名作为登录标识不可修改；邮箱、手机号和头像地址传空字符串可清除。
 - **校验**：`spring-boot-starter-validation`（`@Valid` + `@NotBlank` / `@Size` / `@Pattern` / `@Email`），错误信息由 `GlobalExceptionHandler` 统一返回。
 - **前端**：Pinia 管理登录态（令牌存 `localStorage`），axios 拦截器自动附带令牌、401 自动跳登录页，路由守卫保护 `/profile`。
 
@@ -102,6 +104,10 @@ java-agent-platform/
 | GET | `/api/search/repositories/{owner}/{repo}` | `/search/repositories/{owner}/{repo}` | 仓库详情，依次尝试各来源 |
 | GET | `/api/search/repositories/{owner}/{repo}/branches` | `/search/repositories/{owner}/{repo}/branches` | 分支列表，依次尝试各来源 |
 | GET | `/api/search/repositories/{owner}/{repo}/readme` | `/search/repositories/{owner}/{repo}/readme` | README 正文（清洗 + 截断），供项目深读与详情页展示 |
+| GET | `/api/search/repositories/{owner}/{repo}/releases?limit=5&source=github` | `/search/repositories/{owner}/{repo}/releases` | Release 列表与附件（安装包）下载地址；无 Release 时返回空列表 |
+| GET | `/api/search/repositories/{owner}/{repo}/contents?path=&branch=&source=github` | `/search/repositories/{owner}/{repo}/contents` | 仓库目录结构，返回文件名、路径、类型与大小 |
+| GET | `/api/search/repositories/{owner}/{repo}/file?path=README.md&source=github` | `/search/repositories/{owner}/{repo}/file` | 读取单个文本文件；二进制、目录、超大文件会返回明确标记 |
+| GET | `/api/search/repositories/{owner}/{repo}/archive?branch=main&source=github` | `/search/repositories/{owner}/{repo}/archive` | 流式下载仓库 ZIP；受 JWT 保护，不占用 GitHub REST API 额度 |
 
 ### 多数据源设计（为什么主来源是 GitHub）
 
@@ -240,6 +246,10 @@ Gitee 官方 `/v5/search/repositories` 当前对任何关键词都返回 `[]`（
 | GET | `/api/ai/conversations/{conversationId}/messages` | 同左 | 某个会话的消息列表，只能查询自己的会话 |
 | GET | `/api/ai/memories` | `/ai/memories` | 当前用户的长期记忆列表（模型记住了我什么） |
 | DELETE | `/api/ai/memories` | `/ai/memories` | 清空当前用户的长期记忆，返回删除条数 |
+| GET | `/api/ai/model-config` | `/ai/model-config` | 查询当前用户的自定义模型配置（Key 仅返回末四位） |
+| PUT | `/api/ai/model-config` | `/ai/model-config` | 保存或更新 Base URL、模型名和 API Key |
+| POST | `/api/ai/model-config/test` | `/ai/model-config/test` | 测试用户模型是否可连通，不保存配置 |
+| DELETE | `/api/ai/model-config` | `/ai/model-config` | 删除自定义模型配置，回退平台默认模型 |
 
 ```json
 // /api/ai/chat 请求
@@ -272,6 +282,25 @@ Gitee 官方 `/v5/search/repositories` 当前对任何关键词都返回 `[]`（
 
 分开的原因：普通对话不该看见工具，避免模型对任何问题都去调用检索；推荐流水线的两步都要求稳定输出
 JSON，各自用独立系统提示词比在同一提示词里切换任务更可控。五者都由 `builder.clone()` 派生，互不污染。
+
+### 用户自带模型 API（BYOK）
+
+除了平台默认的 DeepSeek，用户还可以在 `/model-settings` 页面配置自己的 OpenAI 兼容接口：
+
+- **配置项**：Base URL、模型名、API Key、是否启用。
+- **适用范围**：启用后，普通对话、Agent、项目推荐解析/排序、长期记忆抽取都会优先使用用户自己的 Token；关闭或删除配置后回退平台默认模型。
+- **安全存储**：API Key 使用 AES-256-GCM 加密后写入 `ai_user_model_config`，数据库不保存明文；接口只返回 `••••abcd` 形式的末四位提示。
+- **加密口令**：服务端通过 `AI_MODEL_ENCRYPTION_KEY` 注入，生产环境必须替换默认值；更换口令后旧配置无法解密，需要用户重新保存。
+- **兼容范围**：接口按 OpenAI Chat Completions 协议调用，Base URL 示例：DeepSeek `https://api.deepseek.com`、OpenAI `https://api.openai.com/v1`、硅基流动 `https://api.siliconflow.cn/v1`。Agent 工具调用需要所选模型支持 function/tool calling。
+- **回退策略**：用户未配置或关闭开关时使用平台默认模型；启用后若用户 Key、余额或模型名有误，会明确返回模型调用失败，不会静默改用平台 Token。
+- **部署安全**：Base URL 由用户填写。公开部署时应在网络层限制 ai-service 的出站访问，避免用户把地址指向内网服务；如需使用本机 Ollama，请仅在受控环境放开 `host.docker.internal`。
+
+表结构见 `infrastructure/mysql/init/06-user-model-config.sql`。已有 Docker 数据卷不会自动重跑初始化脚本，首次升级时需执行：
+
+```bash
+docker exec -i jap-mysql mysql -uroot -proot --default-character-set=utf8mb4 < infrastructure/mysql/init/06-user-model-config.sql
+```
+
 ### Tool Calling 链路
 
 ```
@@ -281,7 +310,8 @@ gateway-service（StripPrefix 去掉 /api）
     ↓ lb://ai-service
 ai-service：AgentService → agentChatClient
     ↓ 模型决定调用工具
-SearchTools（@Tool：search_repositories / get_repository_detail / list_repository_branches）
+SearchTools（@Tool：search_repositories / get_repository_detail / list_repository_branches /
+             list_repository_releases / list_repository_files / read_repository_file）
     ↓ Feign：common-api 的 SearchServiceClient
 Nacos 服务发现 → search-service
     ↓
@@ -479,15 +509,23 @@ Redis 记忆是「给模型看的运行时上下文」，会按窗口裁剪、�
 | `/history` | `views/history/HistoryView.vue` | 历史记录，对接 `/api/ai/conversations**` |
 | `/project` | `views/project/ProjectView.vue` | 项目管理，对接 `/api/project/**` |
 | `/profile` | `views/user/ProfileView.vue` | 个人中心 |
+| `/wallet` | `views/user/WalletView.vue` | 额度中心：支付宝扫码充值、余额与 Token 扣费明细 |
+| `/admin/recharge` | `views/admin/RechargeView.vue` | 管理员手工充值（ADMIN） |
+| `/model-settings` | `views/user/ModelSettingsView.vue` | 配置自己的 OpenAI 兼容模型与 API Key，支持测试连接和回退平台默认模型 |
 
 登录后默认进入 `/recommend`（`/chat` 会重定向到这里）；未登录访问受保护页面会跳转到 `/login?redirect=...`。
 
 ### 代码检索页
 
 - 关键词搜索：`GET /api/search/repositories?keyword=&page=&perPage=`，结果按卡片展示（来源 / 全名 / 简介 / 语言 / Star / Fork / 默认分支，简介已由后端清洗截断）。
+- **卡片和详情页都可直接「下载 ZIP」**：前端携带 JWT 调用归档接口，后端从 GitHub / Gitee 流式转发，
+  不需要跳转到代码托管平台手动点击下载；项目管理页同样提供下载入口。
 - **点击结果卡片（或卡片右下角「查看详情」）跳转到 `/repo/:owner/:repo` 详情页**，而不是在当前页底部插一块面板——
   详情出现在视口外会让用户误以为「点了没反应」。详情页并发请求详情 / 分支 / README 三个接口，
   用 `Promise.allSettled` 分别接收：分支或 README 拿不到时页面照常渲染，只有详情本身失败才提示错误。
+- **详情页支持 Releases 与仓库结构浏览**：有 Release 时直接列出附件文件名、大小、下载次数和下载地址，
+  点击即可下载安装包；没有 Release 时提示可下载源码并让 Agent 判断启动方式。目录面板可逐级进入子目录，
+  点击文本文件可预览 README、`package.json`、`pom.xml`、`Dockerfile` 等内容，二进制与超大文件会明确提示。
 - 直达详情：输入 `owner/repo`（如 `macrozheng/mall`）直接跳详情页。
 - 详情页「先有内容、再补齐」：点击结果时会先把列表里已拿到的仓库信息写进会话缓存
   （`utils/repoCache.ts`），详情页立刻渲染，再回查详情 / 分支 / README 补齐；
@@ -814,3 +852,83 @@ curl http://localhost:8080/api/user/me -H "Authorization: Bearer <token>"
     将来若确实需要刷新，再按同样的方式声明 Feign 客户端即可。
 12. **身份解析集中在 common-security**：`AuthHeaders`（请求头名）与 `CurrentUser`（解析规则）都放在公共模块，
     各服务只依赖不重写，避免「某个服务把非法用户 ID 当匿名」这类不一致。
+
+## 十四、平台额度与 Token 计费
+
+- **角色**：`user.role` 取值 `ADMIN` / `USER`，签发 JWT 时写入 `role`，网关校验后通过 `X-User-Role` 传给下游；
+  `ai-service` 的管理员判定会读取数据库中的当前角色，因此调整角色后旧 JWT 也能立即生效。
+- **管理员**：平台模型默认可用且不扣额度；如果管理员也配置并启用了自己的 API Key，则优先使用自己的 Key。
+- **普通用户**：未配置自己的模型时走平台 DeepSeek，调用前检查余额，调用后按真实 Token 扣费；
+  配置并启用自己的 API Key 后不扣平台额度，但仍记录 Token 流水用于统计。
+- **计费公式**：`输入 Token × 输入单价 + 输出 Token × 输出单价`，单价单位是「元 / 百万 Token」，
+  默认输入 `2.0`、输出 `8.0`，可通过 `AI_INPUT_PRICE_PER_MILLION_YUAN` / `AI_OUTPUT_PRICE_PER_MILLION_YUAN` 调整。
+  余额与单次扣费在库内使用微元（1 元 = 1,000,000 微元），输入/输出费用分别四舍五入到微元后相加。
+- **覆盖场景**：普通对话、Agent、推荐需求解析、推荐排序、长期记忆抽取、模型连接测试都会记入 `ai_token_usage`。
+- **流水明细**：每条记录保存请求时间、模型、输入/输出/总 Token、输入/输出成本、钱包实际扣费、请求耗时、
+  平台/自带 Key，以及计费方式（平台扣费、管理员免扣、自带 Key、本次无扣费）。
+- **成本与扣费分开**：管理员免扣时钱包实际扣费为 `0`，但页面仍按真实 Token 展示平台模型消耗成本；
+  额度页同时展示近 30 天请求数、Token 汇总、平台模型成本、自带 Key 参考成本、钱包实际扣费和平均耗时。
+- **接口**：
+
+| 方法 | 网关路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| GET | `/api/ai/wallet` | 登录用户 | 当前余额、累计充值/消耗与平台单价 |
+| GET | `/api/ai/wallet/usage?limit=50` | 登录用户 | 最近 Token 使用与扣费流水 |
+| GET | `/api/ai/wallet/usage/summary?days=30` | 登录用户 | 指定天数内的请求数、Token、费用与耗时汇总 |
+| GET | `/api/ai/wallet/admin/overview` | ADMIN | 所有用户的余额与累计消费 |
+| POST | `/api/ai/wallet/recharge` | ADMIN | 给指定用户充值，记录管理员与金额 |
+
+- **数据库**：`ai_user_wallet`（钱包）、`ai_token_usage`（Token 流水）、`ai_recharge_record`（充值记录）。
+  已有数据卷不会自动重跑 init 脚本，升级时手动执行
+  `docker exec -i jap-mysql mysql -uroot -proot --default-character-set=utf8mb4 < infrastructure/mysql/init/10-token-usage-detail.sql`。
+
+## 十五、支付宝当面付充值
+
+额度页 `/wallet` 默认使用支付宝「当面付」扫码充值，管理员手工充值入口继续保留，便于线下补偿。
+这是没有备案域名和 HTTPS 时更简单的接入方式：**不接收异步回调，由前端轮询和后台定时查单确认支付结果**。
+
+**为什么不需要域名**
+
+- 后端只主动调用支付宝网关，不暴露 `notify_url`，所以不需要公网回调地址、ICP 备案域名和 HTTPS 证书。
+- 腾讯云安全组不用为支付额外放行 443；现有 HTTP 页面也能正常发起和确认支付。
+- 仍需在支付宝开放平台创建应用并开通「当面付」，这是支付宝侧的硬性要求，无法用代码绕过。
+
+**支付链路**
+
+1. 用户输入金额，`POST /api/ai/wallet/alipay/orders` 创建本地订单并调用 `alipay.trade.precreate`。
+2. 支付宝返回 `qr_code`，前端用 `qrcode.vue` 在浏览器本地渲染二维码。
+3. 用户打开支付宝扫一扫支付；前端每 2 秒轮询 `GET /api/ai/wallet/alipay/orders/{outTradeNo}`。
+4. 后端收到轮询后主动查单，校验商户订单号、交易金额和 `trade_no`，再在事务内幂等入账。
+5. 后台每分钟补偿查询最近一天未完成订单，用户支付后直接关页面也不会漏记；重复查单不会重复加余额。
+
+**接口**
+
+| 方法 | 网关路径 | 权限 | 说明 |
+| --- | --- | --- | --- |
+| POST | `/api/ai/wallet/alipay/orders` | 登录用户 | 创建当面付订单，返回支付宝二维码内容 |
+| GET | `/api/ai/wallet/alipay/orders/{outTradeNo}` | 登录用户 | 查询本人订单状态并触发主动查单 |
+
+**数据库与配置**
+
+- 新表 `ai_alipay_order` 保存订单金额、二维码、支付宝交易号与支付状态。
+- 下单时把 `amount_micros` 冻结为入账金额；支付宝返回的金额只用于校验，不能直接决定入账值。
+- 应用私钥 `app_private_key.pem` 和支付宝公钥 `alipay_public_key.pem` 放到 `infrastructure/alipay/`，
+  Compose 只读挂载到 `/run/secrets/alipay/`。证书和私钥已被 `.gitignore` 排除。
+- 环境变量见 `.env.example` 的 `ALIPAY_PAY_*`；`ALIPAY_PAY_ENABLED=false` 时额度页会提示支付未启用。
+- 已有数据卷需手动执行一次：
+  `docker exec -i jap-mysql mysql -uroot -proot --default-character-set=utf8mb4 < infrastructure/mysql/init/09-alipay-pay.sql`。
+
+**沙箱联调**
+
+```dotenv
+ALIPAY_PAY_ENABLED=true
+ALIPAY_PAY_APP_ID=沙箱应用的 APPID
+ALIPAY_PAY_GATEWAY_URL=https://openapi-sandbox.dl.alipaydev.com/gateway.do
+```
+
+沙箱使用沙箱应用的密钥和沙箱买家账号；正式上线时再换回 `https://openapi.alipay.com/gateway.do`。
+
+**保留的微信实现**
+
+微信 Native 支付代码、回调验签和建表脚本仍然保留，但默认关闭，前端不再展示微信充值入口。
+以后如果具备备案域名和 HTTPS，可按 `.env.example` 中的 `WECHAT_PAY_*` 配置重新启用。

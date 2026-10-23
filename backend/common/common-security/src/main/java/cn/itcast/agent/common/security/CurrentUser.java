@@ -2,12 +2,13 @@ package cn.itcast.agent.common.security;
 
 import cn.itcast.agent.common.core.exception.BusinessException;
 import cn.itcast.agent.common.core.result.ErrorCode;
+import cn.itcast.agent.common.security.jwt.LoginUser;
 
 /**
  * 当前登录用户的解析工具。
  *
- * <p>用户身份由网关校验 JWT 后写入 X-User-Id 请求头（见 {@link AuthHeaders}），
- * 网关会先删除客户端伪造的同名头再重新写入，因此通过网关进来的该头是可信的。</p>
+ * <p>用户身份由网关校验 JWT 后写入 X-User-Id / X-User-Role 请求头（见 {@link AuthHeaders}），
+ * 网关会先删除客户端伪造的同名头再重新写入，因此通过网关进来的这些头是可信的。</p>
  *
  * <p>放在 common-security 是为了让各业务服务共用同一套解析规则，
  * 避免每个服务各写一份、对「缺失」与「非法」的处理不一致。</p>
@@ -34,7 +35,6 @@ public final class CurrentUser {
 
     /**
      * 宽松解析：用于「能记录就记录」的场景，解析不出返回 null，由调用方决定是否跳过。
-     * 例如绕过网关直接访问后端服务时该头为空，此时跳过与用户相关的写入，业务本身仍然可用。
      *
      * @param headerValue 请求头 X-User-Id 的值，可为 null
      * @return 用户 ID，无法解析时返回 null
@@ -47,6 +47,18 @@ public final class CurrentUser {
             return Long.valueOf(headerValue.trim());
         } catch (NumberFormatException e) {
             return null;
+        }
+    }
+
+    /** 判断 X-User-Role 是否为管理员。该头只能由网关注入。 */
+    public static boolean isAdmin(String roleHeader) {
+        return roleHeader != null && LoginUser.ROLE_ADMIN.equalsIgnoreCase(roleHeader.trim());
+    }
+
+    /** 管理员接口的统一权限校验。 */
+    public static void requireAdmin(String roleHeader) {
+        if (!isAdmin(roleHeader)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN, "该操作需要管理员权限");
         }
     }
 }

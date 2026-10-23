@@ -2,10 +2,16 @@ package cn.itcast.agent.search.client;
 
 import cn.itcast.agent.common.api.dto.GiteeBranch;
 import cn.itcast.agent.common.api.dto.GiteeRepository;
+import cn.itcast.agent.common.api.dto.RepositoryFileContent;
+import cn.itcast.agent.common.api.dto.RepositoryFileEntry;
 import cn.itcast.agent.common.api.dto.RepositoryReadme;
+import cn.itcast.agent.common.api.dto.RepositoryRelease;
+import cn.itcast.agent.common.api.dto.RepositoryReleaseAsset;
 import cn.itcast.agent.search.config.GitHubProperties;
+import cn.itcast.agent.search.support.RepositoryContentSupport;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import tools.jackson.databind.JsonNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
@@ -52,6 +58,12 @@ public class GitHubClient {
 
     /** 仓库分支列表 */
     private static final String PATH_REPOSITORY_BRANCHES = "/repos/{owner}/{repo}/branches";
+    /** 仓库 Release 列表 */
+    private static final String PATH_REPOSITORY_RELEASES = "/repos/{owner}/{repo}/releases";
+    /** 仓库目录与文件内容 */
+    private static final String PATH_REPOSITORY_CONTENTS = "/repos/{owner}/{repo}/contents";
+    /** API 返回的附件最多保留多少个，避免单个 Release 把响应撑得过大 */
+    private static final int MAX_RELEASE_ASSETS = 50;
 
     private final GitHubProperties properties;
     private final RestClient restClient;
@@ -182,10 +194,179 @@ public class GitHubClient {
         return Arrays.stream(branches).map(branch -> new GiteeBranch(branch.name())).toList();
     }
 
+    /** 查询 Release 与附件；草稿版本不会展示给普通用户 */
+    public List<RepositoryRelease> getReleases(String owner, String repo, int limit) {
+        GitHubRelease[] releases = restClient.get()
+                .uri(uriBuilder -> uriBuilder.path(PATH_REPOSITORY_RELEASES)
+                        .queryParam("per_page", limit)
+                        .build(owner, repo))
+                .headers(this::applyAuthorization)
+                .retrieve()
+                .body(GitHubRelease[].class);
+        if (releases == null) {
+            return List.of();
+        }
+        return Arrays.stream(releases)
+                .filter(release -> !Boolean.TRUE.equals(release.draft()))
+                .map(this::toRelease)
+                .toList();
+    }
+
+    /** 列出指定目录；path 为空时读取仓库根目录 */
+    public List<RepositoryFileEntry> listFiles(String owner, String repo, String path, String branch) {
+        JsonNode node = getContents(owner, repo, path, branch);
+        if (node == null) {
+            return List.of();
+        }
+        if (node.isArray()) {
+            return java.util.stream.StreamSupport.stream(node.spliterator(), false)
+                    .map(this::toFileEntry)
+                    .toList();
+        }
+        return node.isObject() ? List.of(toFileEntry(node)) : List.of();
+    }
+
+    /** 读取单个文件；二进制与超大文件只返回标记，不返回正文 */
+    public RepositoryFileContent readFile(String owner, String repo, String path, String branch) {
+        String fullName = owner + "/" + repo;
+        JsonNode node = getContents(owner, repo, path, branch);
+        if (node == null) {
+            return null;
+        }
+        if (node.isArray()) {
+            return new RepositoryFileContent(fullName, path, branch, null, null, false, false, true, false);
+        }
+        String type = text(node, "type");
+        long size = longValue(node, "size", 0L);
+        Long publicSize = size > 0 ? size : null;
+        if ("dir".equalsIgnoreCase(type)) {
+            return new RepositoryFileContent(fullName, path, branch, null, publicSize, false, false, true, false);
+        }
+        if (!"file".equalsIgnoreCase(type)) {
+            return new RepositoryFileContent(fullName, path, branch, null, publicSize, false, true, false, false);
+        }
+        if (size > RepositoryContentSupport.MAX_FILE_BYTES) {
+            return new RepositoryFileContent(fullName, path, branch, null, publicSize, false, false, false, true);
+        }
+        if (RepositoryContentSupport.isBinaryPath(path)) {
+            return new RepositoryFileContent(fullName, path, branch, null, publicSize, false, true, false, false);
+        }
+        String content = text(node, "content");
+        if (!StringUtils.hasText(content)) {
+            return new RepositoryFileContent(fullName, path, branch, "", publicSize, false, false, false, false);
+        }
+        String encoding = text(node, "encoding");
+        if (!"base64".equalsIgnoreCase(encoding)) {
+            return new RepositoryFileContent(fullName, path, branch, content, publicSize, false, false, false, false);
+        }
+        byte[] decoded = RepositoryContentSupport.decodeBase64(content);
+        if (decoded == null) {
+            return new RepositoryFileContent(fullName, path, branch, null, publicSize, false, true, false, false);
+        }
+        if (RepositoryContentSupport.looksBinary(decoded)) {
+            return new RepositoryFileContent(fullName, path, branch, null, publicSize, false, true, false, false);
+        }
+        return new RepositoryFileContent(fullName, path, branch,
+                RepositoryContentSupport.toText(decoded), publicSize, false, false, false, false);
+    }
+
+    /**
+     * 打开默认分支的 ZIP 归档流。
+     *
+     * <p>这里走 GitHub 网页归档地址而不是 REST API 的 zipball：归档生成不计入
+     * API 的按小时调用额度，避免用户连续下载几个仓库就把检索额度耗尽。</p>
+     */
+    public RepositoryArchiveStream openArchive(String owner, String repo, String branch) {
+        String url = stripTrailingSlash(properties.webBaseUrl())
+                + "/" + ArchiveHttpSupport.encodePathSegment(owner)
+                + "/" + ArchiveHttpSupport.encodePathSegment(repo)
+                + "/archive/refs/heads/" + ArchiveHttpSupport.encodeRef(branch) + ".zip";
+        return ArchiveHttpSupport.open(url, ArchiveHttpSupport.archiveFileName(owner, repo, branch));
+    }
+
     private void applyAuthorization(HttpHeaders headers) {
         if (StringUtils.hasText(properties.token())) {
             headers.setBearerAuth(properties.token());
         }
+    }
+
+    /**
+     * 读取 GitHub contents 接口。目录与文件返回的 JSON 顶层类型不同（数组 / 对象），
+     * 这里保留为 JsonNode 再按调用场景解释；404 返回 null，让业务层给用户更准确的提示。
+     */
+    private JsonNode getContents(String owner, String repo, String path, String branch) {
+        try {
+            return restClient.get()
+                    .uri(uriBuilder -> {
+                        uriBuilder.path(PATH_REPOSITORY_CONTENTS);
+                        if (StringUtils.hasText(path)) {
+                            for (String segment : path.split("/")) {
+                                if (!segment.isEmpty()) {
+                                    uriBuilder.pathSegment(segment);
+                                }
+                            }
+                        }
+                        if (StringUtils.hasText(branch)) {
+                            uriBuilder.queryParam("ref", branch);
+                        }
+                        return uriBuilder.build(owner, repo);
+                    })
+                    .headers(this::applyAuthorization)
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode().value() == 404) {
+                log.debug("仓库路径不存在：repo={}/{}, path={}", owner, repo, path);
+                return null;
+            }
+            throw e;
+        }
+    }
+
+    private RepositoryFileEntry toFileEntry(JsonNode node) {
+        String type = text(node, "type");
+        long size = longValue(node, "size", 0L);
+        return new RepositoryFileEntry(
+                text(node, "name"),
+                text(node, "path"),
+                StringUtils.hasText(type) ? type : "file",
+                "dir".equalsIgnoreCase(type) || size <= 0 ? null : size,
+                text(node, "html_url"));
+    }
+
+    private RepositoryRelease toRelease(GitHubRelease release) {
+        List<GitHubAsset> rawAssets = release.assets() == null ? List.of() : release.assets();
+        List<RepositoryReleaseAsset> assets = rawAssets.stream()
+                .limit(MAX_RELEASE_ASSETS)
+                .map(asset -> new RepositoryReleaseAsset(asset.name(), asset.contentType(), asset.size(),
+                        asset.downloadCount(), asset.downloadUrl()))
+                .toList();
+        String publishedAt = StringUtils.hasText(release.publishedAt())
+                ? release.publishedAt() : release.createdAt();
+        return new RepositoryRelease(
+                release.tagName(),
+                StringUtils.hasText(release.name()) ? release.name() : release.tagName(),
+                Boolean.TRUE.equals(release.prerelease()),
+                publishedAt,
+                release.htmlUrl(),
+                release.body(),
+                false,
+                rawAssets.size(),
+                assets);
+    }
+
+    private String text(JsonNode node, String field) {
+        JsonNode value = node.get(field);
+        return value == null || value.isNull() ? null : value.asText();
+    }
+
+    private long longValue(JsonNode node, String field, long defaultValue) {
+        JsonNode value = node.get(field);
+        return value == null || value.isNull() ? defaultValue : value.asLong(defaultValue);
+    }
+
+    private String stripTrailingSlash(String value) {
+        return value.endsWith("/") ? value.substring(0, value.length() - 1) : value;
     }
 
     /** 数据来源标记由 provider 层统一补上，客户端只做结构映射 */
@@ -199,6 +380,7 @@ public class GitHubClient {
                 item.forks(),
                 item.defaultBranch(),
                 item.htmlUrl(),
+                item.homepage(),
                 item.licenseName(),
                 item.topics() == null ? List.of() : item.topics(),
                 item.updatedAt(),
@@ -221,6 +403,7 @@ public class GitHubClient {
             @JsonAlias("forks_count") Integer forks,
             @JsonAlias("default_branch") String defaultBranch,
             @JsonAlias("html_url") String htmlUrl,
+            String homepage,
             GitHubLicense license,
             List<String> topics,
             @JsonAlias("updated_at") String updatedAt
@@ -243,6 +426,32 @@ public class GitHubClient {
     /** GitHub README 响应：默认媒体类型返回 base64 编码的正文 */
     @JsonIgnoreProperties(ignoreUnknown = true)
     record GitHubReadme(String name, String path, Integer size, String encoding, String content) {
+    }
+
+    /** GitHub Release 响应 */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record GitHubRelease(
+            @JsonAlias("tag_name") String tagName,
+            String name,
+            Boolean draft,
+            Boolean prerelease,
+            @JsonAlias("created_at") String createdAt,
+            @JsonAlias("published_at") String publishedAt,
+            @JsonAlias("html_url") String htmlUrl,
+            String body,
+            List<GitHubAsset> assets
+    ) {
+    }
+
+    /** GitHub Release 附件 */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record GitHubAsset(
+            String name,
+            @JsonAlias("content_type") String contentType,
+            Long size,
+            @JsonAlias("download_count") Long downloadCount,
+            @JsonAlias("browser_download_url") String downloadUrl
+    ) {
     }
 
     /** GitHub 分支条目，字段名与 Gitee 一致，可直接复用 GiteeBranch */
