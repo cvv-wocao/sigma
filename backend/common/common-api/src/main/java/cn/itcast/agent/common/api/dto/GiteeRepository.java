@@ -39,6 +39,7 @@ public record GiteeRepository(
         @JsonAlias("forks_count") Integer forks,
         @JsonAlias("default_branch") String defaultBranch,
         @JsonAlias("html_url") String htmlUrl,
+        String homepage,
         String license,
         List<String> topics,
         @JsonAlias("updated_at") String updatedAt,
@@ -51,7 +52,7 @@ public record GiteeRepository(
      */
     public GiteeRepository withSource(String source) {
         return new GiteeRepository(name, fullName, description, language, stars, forks,
-                defaultBranch, htmlUrl, license, topics, updatedAt, source);
+                defaultBranch, htmlUrl, homepage, license, topics, updatedAt, source);
     }
 
     /**
@@ -61,6 +62,6 @@ public record GiteeRepository(
      */
     public GiteeRepository withDescription(String newDescription) {
         return new GiteeRepository(name, fullName, newDescription, language, stars, forks,
-                defaultBranch, htmlUrl, license, topics, updatedAt, source);
+                defaultBranch, htmlUrl, homepage, license, topics, updatedAt, source);
     }
 }

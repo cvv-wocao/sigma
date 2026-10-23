@@ -2,7 +2,11 @@ package cn.itcast.agent.search.provider;
 
 import cn.itcast.agent.common.api.dto.GiteeBranch;
 import cn.itcast.agent.common.api.dto.GiteeRepository;
+import cn.itcast.agent.common.api.dto.RepositoryFileContent;
+import cn.itcast.agent.common.api.dto.RepositoryFileEntry;
 import cn.itcast.agent.common.api.dto.RepositoryReadme;
+import cn.itcast.agent.common.api.dto.RepositoryRelease;
+import cn.itcast.agent.search.client.RepositoryArchiveStream;
 import cn.itcast.agent.search.client.GitHubClient;
 import org.springframework.stereotype.Component;
 
@@ -47,6 +51,21 @@ public class GitHubSearchProvider implements RepositorySearchProvider {
     }
 
     @Override
+    public List<RepositoryRelease> getReleases(String owner, String repo, int limit) {
+        return gitHubClient.getReleases(owner, repo, limit);
+    }
+
+    @Override
+    public List<RepositoryFileEntry> listFiles(String owner, String repo, String path, String branch) {
+        return gitHubClient.listFiles(owner, repo, path, branch);
+    }
+
+    @Override
+    public RepositoryFileContent readFile(String owner, String repo, String path, String branch) {
+        return gitHubClient.readFile(owner, repo, path, branch);
+    }
+
+    @Override
     public GiteeRepository getRepository(String owner, String repo) {
         GiteeRepository repository = gitHubClient.getRepository(owner, repo);
         return repository == null ? null : repository.withSource(name());
@@ -55,5 +74,10 @@ public class GitHubSearchProvider implements RepositorySearchProvider {
     @Override
     public List<GiteeBranch> getBranches(String owner, String repo) {
         return gitHubClient.getBranches(owner, repo);
+    }
+
+    @Override
+    public RepositoryArchiveStream openArchive(String owner, String repo, String branch) {
+        return gitHubClient.openArchive(owner, repo, branch);
     }
 }

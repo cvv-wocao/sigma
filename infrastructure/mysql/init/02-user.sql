@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS `user`
     `phone`       VARCHAR(20)           DEFAULT NULL COMMENT '手机号',
     `avatar`      VARCHAR(255)          DEFAULT NULL COMMENT '头像地址',
     `status`      TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1 正常，0 禁用',
+    `role`        VARCHAR(16)  NOT NULL DEFAULT 'USER' COMMENT '角色：ADMIN / USER',
     `create_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     `update_time` DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     PRIMARY KEY (`id`),

@@ -126,11 +126,12 @@ const contextSamples = [
   '如果我要二开，哪个的可维护性更好？'
 ]
 
-/** 独立对话的示例：覆盖详情 / 分支 / 检索三种工具用法 */
+/** 独立对话的示例：覆盖检索、详情、安装包与仓库结构 */
 const plainSamples = [
   '帮我查一下 macrozheng/mall 这个仓库的详情',
-  '刚才那个仓库有哪些分支？',
-  '帮我搜搜和 springboot 相关的开源项目'
+  '帮我搜搜和 springboot 相关的开源项目',
+  'junegunn/fzf 的安装包在哪下载？',
+  '看看 macrozheng/mall 的目录结构，并告诉我怎么启动'
 ]
 
 const sampleIcons = ['sparkles', 'alert', 'layers', 'search', 'branch']

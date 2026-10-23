@@ -7,6 +7,8 @@ import java.time.LocalDateTime;
 
 /**
  * 用户信息出参（不含密码）。
+ *
+ * @param role ADMIN / USER，前端据此显示管理员入口
  */
 public record UserInfoVO(
         Long id,
@@ -15,6 +17,7 @@ public record UserInfoVO(
         String email,
         String phone,
         String avatar,
+        String role,
         LocalDateTime createTime
 ) implements Serializable {
 
@@ -26,6 +29,7 @@ public record UserInfoVO(
                 user.getEmail(),
                 user.getPhone(),
                 user.getAvatar(),
+                user.getRole() == null || user.getRole().isBlank() ? User.ROLE_USER : user.getRole(),
                 user.getCreateTime());
     }
 }

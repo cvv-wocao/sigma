@@ -87,4 +87,6 @@ search:
 # 只需 public_repo 读权限；填到项目根目录 .env.local 的 GITHUB_TOKEN。
 github:
   base-url: ${GITHUB_BASE_URL:https://api.github.com}
+  # 仓库 ZIP 归档下载走网页域名（归档接口不受 REST API 的 60/5000 次每小时额度约束）
+  web-base-url: ${GITHUB_WEB_BASE_URL:https://github.com}
   token: ${GITHUB_TOKEN:}

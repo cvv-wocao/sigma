@@ -2,7 +2,13 @@ package cn.itcast.agent.search.provider;
 
 import cn.itcast.agent.common.api.dto.GiteeBranch;
 import cn.itcast.agent.common.api.dto.GiteeRepository;
+import cn.itcast.agent.common.api.dto.RepositoryFileContent;
+import cn.itcast.agent.common.api.dto.RepositoryFileEntry;
 import cn.itcast.agent.common.api.dto.RepositoryReadme;
+import cn.itcast.agent.common.api.dto.RepositoryRelease;
+import cn.itcast.agent.common.core.exception.BusinessException;
+import cn.itcast.agent.common.core.result.ErrorCode;
+import cn.itcast.agent.search.client.RepositoryArchiveStream;
 
 import java.util.List;
 
@@ -43,6 +49,29 @@ public interface RepositorySearchProvider {
         return null;
     }
 
+    /** 查询 Release 与附件；来源不支持时返回空列表 */
+    default List<RepositoryRelease> getReleases(String owner, String repo, int limit) {
+        return List.of();
+    }
+
+    /** 列出目录；来源不支持时返回空列表 */
+    default List<RepositoryFileEntry> listFiles(String owner, String repo, String path, String branch) {
+        return List.of();
+    }
+
+    /** 读取文件；来源不支持或文件不存在时返回 null */
+    default RepositoryFileContent readFile(String owner, String repo, String path, String branch) {
+        return null;
+    }
+
     /** 查询仓库分支列表，仓库不存在时可能抛出 4xx 异常，由调用方兜底 */
     List<GiteeBranch> getBranches(String owner, String repo);
+
+    /**
+     * 打开指定分支的仓库 ZIP 归档流。默认认为来源不支持；支持的服务商覆写本方法。
+     * 调用方负责关闭返回的流。
+     */
+    default RepositoryArchiveStream openArchive(String owner, String repo, String branch) {
+        throw new BusinessException(ErrorCode.SERVER_ERROR, "当前数据源暂不支持直接下载仓库归档");
+    }
 }

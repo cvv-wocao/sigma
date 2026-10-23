@@ -142,14 +142,14 @@ public class LongTermMemoryServiceImpl implements LongTermMemoryService {
     }
 
     @Override
-    public void remember(Long userId, String conversationId, String question, String answer) {
+    public void remember(Long userId, String conversationId, String question, String answer, boolean admin) {
         if (userId == null || !properties.active() || backgroundExecutor.isShutdown()) {
             return;
         }
         try {
             backgroundExecutor.submit(() -> {
                 try {
-                    doRemember(userId, conversationId, question, answer);
+                    doRemember(userId, conversationId, question, answer, admin);
                 } catch (Exception e) {
                     log.error("长期记忆写入失败：userId={}, conversationId={}", userId, conversationId, e);
                 }
@@ -190,7 +190,7 @@ public class LongTermMemoryServiceImpl implements LongTermMemoryService {
     }
 
     /** 抽取并落库：去重、合并、限量淘汰，整段都在后台线程里跑 */
-    private void doRemember(Long userId, String conversationId, String question, String answer) {
+    private void doRemember(Long userId, String conversationId, String question, String answer, boolean admin) {
         List<UserMemory> existing = userMemoryMapper.selectList(
                 Wrappers.<UserMemory>lambdaQuery()
                         .eq(UserMemory::getUserId, userId)
@@ -207,7 +207,8 @@ public class LongTermMemoryServiceImpl implements LongTermMemoryService {
                 .map(UserMemory::getContent)
                 .toList();
 
-        List<MemoryExtractor.MemoryDraft> drafts = memoryExtractor.extract(promptContents, question, answer);
+        List<MemoryExtractor.MemoryDraft> drafts = memoryExtractor.extract(
+                userId, promptContents, question, answer, admin);
         if (drafts.isEmpty()) {
             log.debug("本轮没有抽到新的长期记忆：userId={}", userId);
             return;

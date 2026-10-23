@@ -3,9 +3,17 @@ package cn.itcast.agent.search.controller;
 import cn.itcast.agent.common.api.dto.GiteeBranch;
 import cn.itcast.agent.common.api.dto.GiteeRepository;
 import cn.itcast.agent.common.api.dto.RepositoryBatchQuery;
+import cn.itcast.agent.common.api.dto.RepositoryFileContent;
+import cn.itcast.agent.common.api.dto.RepositoryFileListing;
 import cn.itcast.agent.common.api.dto.RepositoryReadme;
+import cn.itcast.agent.common.api.dto.RepositoryRelease;
 import cn.itcast.agent.common.core.result.Result;
+import cn.itcast.agent.search.client.RepositoryArchiveStream;
 import cn.itcast.agent.search.service.SearchService;
+import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,6 +22,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 
 /**
@@ -80,5 +91,66 @@ public class SearchController {
     public Result<List<GiteeBranch>> getBranches(@PathVariable("owner") String owner,
                                                  @PathVariable("repo") String repo) {
         return Result.success(searchService.getBranches(owner, repo));
+    }
+
+    /**
+     * 直接下载仓库 ZIP 归档。
+     * 对外：GET /api/search/repositories/{owner}/{repo}/archive?branch=main&amp;source=github
+     *
+     * <p>响应不是统一 Result 结构，而是 ZIP 二进制流。前端使用 Blob 接收后触发浏览器保存；
+     * 服务端边读上游边写响应，避免大仓库占用大量堆内存。</p>
+     */
+    @GetMapping("/repositories/{owner}/{repo}/releases")
+    public Result<List<RepositoryRelease>> listReleases(
+            @PathVariable("owner") String owner,
+            @PathVariable("repo") String repo,
+            @RequestParam(value = "limit", required = false) Integer limit,
+            @RequestParam(value = "source", required = false) String source) {
+        return Result.success(searchService.getReleases(owner, repo, limit, source));
+    }
+
+    @GetMapping("/repositories/{owner}/{repo}/contents")
+    public Result<RepositoryFileListing> listRepositoryFiles(
+            @PathVariable("owner") String owner,
+            @PathVariable("repo") String repo,
+            @RequestParam(value = "path", required = false) String path,
+            @RequestParam(value = "branch", required = false) String branch,
+            @RequestParam(value = "source", required = false) String source) {
+        return Result.success(searchService.listFiles(owner, repo, path, branch, source));
+    }
+
+    @GetMapping("/repositories/{owner}/{repo}/file")
+    public Result<RepositoryFileContent> readRepositoryFile(
+            @PathVariable("owner") String owner,
+            @PathVariable("repo") String repo,
+            @RequestParam("path") String path,
+            @RequestParam(value = "branch", required = false) String branch,
+            @RequestParam(value = "source", required = false) String source) {
+        return Result.success(searchService.readFile(owner, repo, path, branch, source));
+    }
+
+    @GetMapping("/repositories/{owner}/{repo}/archive")
+    public void downloadArchive(@PathVariable("owner") String owner,
+                                @PathVariable("repo") String repo,
+                                @RequestParam(value = "branch", required = false) String branch,
+                                @RequestParam(value = "source", required = false) String source,
+                                HttpServletResponse response) throws IOException {
+        RepositoryArchiveStream archive = searchService.openArchive(owner, repo, branch, source);
+        try (archive; InputStream input = archive.inputStream()) {
+            response.setStatus(HttpServletResponse.SC_OK);
+            response.setContentType(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+            response.setHeader(HttpHeaders.CONTENT_DISPOSITION,
+                    ContentDisposition.attachment()
+                            .filename(archive.fileName(), StandardCharsets.UTF_8)
+                            .build()
+                            .toString());
+            response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+            response.setHeader("X-Content-Type-Options", "nosniff");
+            if (archive.contentLength() > 0) {
+                response.setContentLengthLong(archive.contentLength());
+            }
+            input.transferTo(response.getOutputStream());
+            response.flushBuffer();
+        }
     }
 }

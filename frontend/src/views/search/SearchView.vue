@@ -143,15 +143,26 @@
               <AppIcon name="branch" :size="13" />
               {{ repository.defaultBranch || '未知分支' }}
             </span>
-            <button
-              class="btn btn-soft btn-sm"
-              type="button"
-              :disabled="savingFullName === repository.fullName"
-              @click.stop="handleFavorite(repository)"
-            >
-              <AppIcon name="star" :size="13" />
-              {{ savingFullName === repository.fullName ? '收藏中…' : '收藏' }}
-            </button>
+            <div class="repo-actions" @keydown.stop>
+              <button
+                class="btn btn-soft btn-sm"
+                type="button"
+                :disabled="downloadingFullName === repository.fullName"
+                @click.stop="handleDownload(repository)"
+              >
+                <AppIcon name="download" :size="13" />
+                {{ downloadingFullName === repository.fullName ? '下载中…' : '下载 ZIP' }}
+              </button>
+              <button
+                class="btn btn-soft btn-sm"
+                type="button"
+                :disabled="savingFullName === repository.fullName"
+                @click.stop="handleFavorite(repository)"
+              >
+                <AppIcon name="star" :size="13" />
+                {{ savingFullName === repository.fullName ? '收藏中…' : '收藏' }}
+              </button>
+            </div>
             <span class="repo-open">
               查看详情
               <AppIcon name="arrowRight" :size="13" />
@@ -168,7 +179,7 @@ import { onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { createProject } from '@/api/project'
-import { searchRepositories } from '@/api/search'
+import { downloadRepositoryArchive, searchRepositories } from '@/api/search'
 import { useSearchStore } from '@/stores/search'
 import AppIcon from '@/components/AppIcon.vue'
 import type { GiteeRepository } from '@/types/search'
@@ -190,6 +201,8 @@ const errorMessage = ref('')
 const successMessage = ref('')
 /** 正在收藏的仓库全名，用于按钮禁用与文案 */
 const savingFullName = ref('')
+/** 正在下载的仓库全名，用于按钮禁用与文案 */
+const downloadingFullName = ref('')
 
 async function handleSearch() {
   if (!keyword.value) {
@@ -246,6 +259,31 @@ async function handleFavorite(repository: GiteeRepository) {
     errorMessage.value = error instanceof Error ? error.message : '收藏失败，请稍后重试'
   } finally {
     savingFullName.value = ''
+  }
+}
+
+/** 直接下载当前仓库的 ZIP 归档，不需要跳转到 GitHub / Gitee 网页 */
+async function handleDownload(repository: GiteeRepository) {
+  const [owner, repo] = splitFullName(repository.fullName)
+  if (!owner || !repo) {
+    errorMessage.value = '仓库全名格式不正确，无法下载'
+    return
+  }
+  errorMessage.value = ''
+  successMessage.value = ''
+  downloadingFullName.value = repository.fullName
+  try {
+    await downloadRepositoryArchive({
+      owner,
+      repo,
+      branch: repository.defaultBranch,
+      source: repository.source
+    })
+    successMessage.value = `已开始下载 ${repository.fullName} 的 ZIP 包`
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '下载失败，请稍后重试'
+  } finally {
+    downloadingFullName.value = ''
   }
 }
 

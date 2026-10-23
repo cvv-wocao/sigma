@@ -5,6 +5,7 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.context.annotation.Bean;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 
@@ -27,6 +28,7 @@ import java.nio.charset.StandardCharsets;
  * 提示词里切换任务更可控。Builder 使用 clone() 派生，互不影响。</p>
  */
 @Configuration
+@EnableConfigurationProperties({UserModelProperties.class, BillingProperties.class})
 public class AiConfig {
 
     /** 普通对话的系统提示词 */

@@ -2,6 +2,7 @@ package cn.itcast.agent.user.service;
 
 import cn.itcast.agent.user.dto.LoginRequest;
 import cn.itcast.agent.user.dto.RegisterRequest;
+import cn.itcast.agent.user.dto.UpdateProfileRequest;
 import cn.itcast.agent.user.vo.LoginVO;
 import cn.itcast.agent.user.vo.UserInfoVO;
 
@@ -24,4 +25,9 @@ public interface UserService {
      * 查询当前登录用户信息。
      */
     UserInfoVO getCurrentUser(Long userId);
+
+    /**
+     * 更新当前登录用户的昵称、邮箱、手机号与头像地址。
+     */
+    UserInfoVO updateCurrentUser(Long userId, UpdateProfileRequest request);
 }

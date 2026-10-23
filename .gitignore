@@ -36,6 +36,11 @@ pnpm-debug.log*
 .env.*.local
 !/.env.example
 
+# ===== 支付证书与私钥 =====
+*.pem
+*.p12
+*.pfx
+
 # ===== 运维 =====
 logs/
 *.pid

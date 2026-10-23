@@ -66,6 +66,7 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
                     headers.remove(AuthHeaders.USER_ID);
                     headers.remove(AuthHeaders.USERNAME);
                     headers.remove(AuthHeaders.NICKNAME);
+                    headers.remove(AuthHeaders.USER_ROLE);
                 })
                 .build();
 
@@ -98,6 +99,7 @@ public class JwtAuthGlobalFilter implements GlobalFilter, Ordered {
                     }
                     headers.set(AuthHeaders.USERNAME, nullToEmpty(loginUser.username()));
                     headers.set(AuthHeaders.NICKNAME, nullToEmpty(loginUser.nickname()));
+                    headers.set(AuthHeaders.USER_ROLE, nullToEmpty(loginUser.role()));
                 })
                 .build();
         return chain.filter(exchange.mutate().request(authenticatedRequest).build());

@@ -171,6 +171,15 @@
               <AppIcon name="edit" :size="14" />
               编辑
             </button>
+            <button
+              class="btn btn-sm"
+              type="button"
+              :disabled="downloadingId === project.id"
+              @click="handleDownload(project)"
+            >
+              <AppIcon name="download" :size="14" />
+              {{ downloadingId === project.id ? '下载中…' : '下载 ZIP' }}
+            </button>
             <button class="btn btn-sm" type="button" :disabled="saving" @click="handleToggleStatus(project)">
               <AppIcon :name="project.status === 1 ? 'archive' : 'refresh'" :size="14" />
               {{ project.status === 1 ? '归档' : '恢复关注' }}
@@ -189,6 +198,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { createProject, deleteProject, listProjects, updateProject } from '@/api/project'
+import { downloadRepositoryArchive } from '@/api/search'
 import AppIcon from '@/components/AppIcon.vue'
 import type { Project } from '@/types/project'
 
@@ -199,6 +209,7 @@ const status = ref<number | ''>('')
 const loading = ref(false)
 const saving = ref(false)
 const creating = ref(false)
+const downloadingId = ref<number | null>(null)
 const errorMessage = ref('')
 const successMessage = ref('')
 
@@ -295,6 +306,44 @@ async function handleToggleStatus(project: Project) {
   } finally {
     saving.value = false
   }
+}
+
+/** 项目管理页也支持直接下载；来源优先根据收藏时保存的 htmlUrl 判断 */
+async function handleDownload(project: Project) {
+  errorMessage.value = ''
+  successMessage.value = ''
+  downloadingId.value = project.id
+  try {
+    await downloadRepositoryArchive({
+      owner: project.repoOwner,
+      repo: project.repoName,
+      branch: project.defaultBranch,
+      source: sourceFromUrl(project.htmlUrl)
+    })
+    successMessage.value = `已开始下载 ${project.fullName} 的 ZIP 包`
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '下载失败，请稍后重试'
+  } finally {
+    downloadingId.value = null
+  }
+}
+
+function sourceFromUrl(url?: string | null): string | undefined {
+  if (!url) {
+    return undefined
+  }
+  try {
+    const host = new URL(url).hostname.toLowerCase()
+    if (host === 'github.com' || host.endsWith('.github.com')) {
+      return 'github'
+    }
+    if (host === 'gitee.com' || host.endsWith('.gitee.com')) {
+      return 'gitee'
+    }
+  } catch {
+    return undefined
+  }
+  return undefined
 }
 
 async function handleDelete(project: Project) {

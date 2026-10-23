@@ -28,6 +28,7 @@
         <spring-ai.version>2.0.1</spring-ai.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <jjwt.version>0.12.6</jjwt.version>
+        <alipay-sdk.version>4.22.32.ALL</alipay-sdk.version>
     </properties>
 
     <dependencyManagement>
@@ -59,6 +60,13 @@
                 <version>${spring-ai.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+
+            <!-- 支付宝当面付：预下单 + 主动查单，不依赖公网异步回调 -->
+            <dependency>
+                <groupId>com.alipay.sdk</groupId>
+                <artifactId>alipay-sdk-java</artifactId>
+                <version>${alipay-sdk.version}</version>
             </dependency>
 
             <!-- MyBatis-Plus：Spring Boot 4 专用 starter（3.5.13 起提供） -->

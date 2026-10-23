@@ -88,10 +88,17 @@ public class RepositoryTextCleaner {
      * 并把连续空行收敛到 {@link #MAX_CONSECUTIVE_NEWLINES} 行以内。
      */
     public String sanitizeReadme(String raw) {
+        return sanitizeDocument(raw, properties.maxReadmeLength());
+    }
+
+    /**
+     * 清洗任意长文本（README、Release 说明等），保留换行并限制长度。
+     */
+    public String sanitizeDocument(String raw, int maxLength) {
         if (!StringUtils.hasText(raw)) {
             return null;
         }
-        int max = properties.maxReadmeLength();
+        int max = Math.max(maxLength, 1);
         StringBuilder sb = new StringBuilder(Math.min(raw.length(), max + 8));
         boolean pendingSpace = false;
         int pendingNewlines = 0;

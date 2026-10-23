@@ -13,7 +13,6 @@ import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.SystemMessage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -86,28 +85,38 @@ public class AgentService {
             3. 不要在回答里罗列这些记忆，也不要出现「根据我的记忆」之类的表述，自然融入即可。
             """;
 
-    private final ChatClient agentChatClient;
+    private final UserModelClientProvider userModelClientProvider;
     private final ConversationHistoryService conversationHistoryService;
     private final LongTermMemoryService longTermMemoryService;
+    private final BillingService billingService;
 
-    public AgentService(@Qualifier("agentChatClient") ChatClient agentChatClient,
+    public AgentService(UserModelClientProvider userModelClientProvider,
                         ConversationHistoryService conversationHistoryService,
-                        LongTermMemoryService longTermMemoryService) {
-        this.agentChatClient = agentChatClient;
+                        LongTermMemoryService longTermMemoryService,
+                        BillingService billingService) {
+        this.userModelClientProvider = userModelClientProvider;
         this.conversationHistoryService = conversationHistoryService;
         this.longTermMemoryService = longTermMemoryService;
+        this.billingService = billingService;
     }
 
     /**
      * @param authenticatedUserId 网关校验 JWT 后写入的用户 ID（见 common-security 的 AuthHeaders）；
      *                            非空时优先级高于请求体里的 userId，避免客户端伪造身份串用别人的会话记忆
      */
-    public AgentVO agent(AgentRequest request, String authenticatedUserId) {
+    public AgentVO agent(AgentRequest request, String authenticatedUserId, String authenticatedRole) {
         String conversationId = StringUtils.hasText(request.conversationId())
                 ? request.conversationId().trim()
                 : UUID.randomUUID().toString();
         String userId = StringUtils.hasText(authenticatedUserId) ? authenticatedUserId : request.userId();
         String memoryId = memoryId(userId, conversationId);
+
+        // 登录用户配置并启用了自己的模型时，本轮 Agent 使用用户的 Key；否则回退平台默认模型。
+        Long memoryUserId = CurrentUser.parseIdOrNull(userId);
+        boolean admin = billingService.isAdmin(memoryUserId, authenticatedRole);
+        UserModelClientProvider.ModelRoute route = userModelClientProvider.agent(memoryUserId);
+        billingService.requirePlatformAccess(memoryUserId, admin, route.platformToken());
+        ChatClient agentChatClient = route.client();
 
         ChatClient.ChatClientRequestSpec prompt = agentChatClient.prompt()
                 .user(request.message());
@@ -119,7 +128,6 @@ public class AgentService {
 
         // 长期记忆按「用户」维度召回，与按「用户 + 会话」隔离的短期记忆互不影响；
         // 绕过网关直接访问取不到用户 ID 时跳过，对话本身仍然可用。
-        Long memoryUserId = CurrentUser.parseIdOrNull(userId);
         if (memoryUserId != null) {
             List<UserMemory> memories = longTermMemoryService.recall(memoryUserId, request.message());
             if (!memories.isEmpty()) {
@@ -128,10 +136,13 @@ public class AgentService {
             }
         }
 
+        long startedAt = System.nanoTime();
         ChatResponse response = prompt
                 .advisors(advisor -> advisor.param(ChatMemory.CONVERSATION_ID, memoryId))
                 .call()
                 .chatResponse();
+        long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
+        billingService.recordUsage(memoryUserId, admin, route.platformToken(), "AGENT", response, durationMs);
 
         String model = response == null ? null : modelOf(response);
         String answer = null;
@@ -154,7 +165,7 @@ public class AgentService {
 
         // 落库只记录用户真正问的那句话，页面参考数据不进历史，避免历史记录里出现大段重复内容
         recordHistory(userId, conversationId, request.message(), answer, model);
-        rememberLongTerm(memoryUserId, conversationId, request.message(), answer);
+        rememberLongTerm(memoryUserId, conversationId, request.message(), answer, admin);
         return new AgentVO(answer, model, conversationId);
     }
 
@@ -194,11 +205,11 @@ public class AgentService {
      * <p>兜底话术（模型没返回内容）不参与抽取，避免把「模型没有返回内容」这种系统状态
      * 记成用户的事实。</p>
      */
-    private void rememberLongTerm(Long userId, String conversationId, String question, String answer) {
+    private void rememberLongTerm(Long userId, String conversationId, String question, String answer, boolean admin) {
         if (userId == null || EMPTY_ANSWER.equals(answer)) {
             return;
         }
-        longTermMemoryService.remember(userId, conversationId, question, answer);
+        longTermMemoryService.remember(userId, conversationId, question, answer, admin);
     }
 
     /** 记忆 key：用户标识 + 会话标识 */

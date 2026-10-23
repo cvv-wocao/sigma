@@ -3,7 +3,10 @@ package cn.itcast.agent.common.api.client;
 import cn.itcast.agent.common.api.dto.GiteeBranch;
 import cn.itcast.agent.common.api.dto.GiteeRepository;
 import cn.itcast.agent.common.api.dto.RepositoryBatchQuery;
+import cn.itcast.agent.common.api.dto.RepositoryFileContent;
+import cn.itcast.agent.common.api.dto.RepositoryFileListing;
 import cn.itcast.agent.common.api.dto.RepositoryReadme;
+import cn.itcast.agent.common.api.dto.RepositoryRelease;
 import cn.itcast.agent.common.core.result.Result;
 import org.springframework.cloud.openfeign.FeignClient;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -61,4 +64,42 @@ public interface SearchServiceClient {
     @GetMapping("/repositories/{owner}/{repo}/branches")
     Result<List<GiteeBranch>> getBranches(@PathVariable("owner") String owner,
                                           @PathVariable("repo") String repo);
+
+    /**
+     * 查询仓库 Release 与附件（安装包）列表，按发布时间从新到旧。
+     *
+     * @param limit  最多返回多少个 Release，服务端会限制上限
+     * @param source 数据来源 github / gitee；为空时由服务端根据仓库存在性判断
+     */
+    @GetMapping("/repositories/{owner}/{repo}/releases")
+    Result<List<RepositoryRelease>> listReleases(@PathVariable("owner") String owner,
+                                                 @PathVariable("repo") String repo,
+                                                 @RequestParam(value = "limit", required = false) Integer limit,
+                                                 @RequestParam(value = "source", required = false) String source);
+
+    /**
+     * 列出仓库指定目录下的文件与子目录。
+     *
+     * @param path   相对仓库根目录的路径，空表示根目录
+     * @param branch 分支，空表示平台默认分支
+     * @param source 数据来源 github / gitee
+     */
+    @GetMapping("/repositories/{owner}/{repo}/contents")
+    Result<RepositoryFileListing> listRepositoryFiles(
+            @PathVariable("owner") String owner,
+            @PathVariable("repo") String repo,
+            @RequestParam(value = "path", required = false) String path,
+            @RequestParam(value = "branch", required = false) String branch,
+            @RequestParam(value = "source", required = false) String source);
+
+    /**
+     * 读取仓库中的单个文本文件。二进制、目录与超大文件会返回对应标记，不返回正文。
+     */
+    @GetMapping("/repositories/{owner}/{repo}/file")
+    Result<RepositoryFileContent> readRepositoryFile(
+            @PathVariable("owner") String owner,
+            @PathVariable("repo") String repo,
+            @RequestParam("path") String path,
+            @RequestParam(value = "branch", required = false) String branch,
+            @RequestParam(value = "source", required = false) String source);
 }

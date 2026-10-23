@@ -1,10 +1,10 @@
 import { defineStore } from 'pinia'
-import { getCurrentUser, login as loginApi } from '@/api/auth'
+import { getCurrentUser, login as loginApi, updateCurrentUser as updateCurrentUserApi } from '@/api/auth'
 import { clearToken, getToken, setToken } from '@/api/request'
 import { useChatStore } from '@/stores/chat'
 import { useRecommendStore } from '@/stores/recommend'
 import { useSearchStore } from '@/stores/search'
-import type { LoginParams, UserInfo } from '@/types/user'
+import type { LoginParams, UpdateProfileParams, UserInfo } from '@/types/user'
 
 /**
  * 登录态管理：令牌保存在 localStorage，用户信息缓存在内存中。
@@ -36,6 +36,12 @@ export const useUserStore = defineStore('user', {
         return null
       }
       this.userInfo = await getCurrentUser()
+      return this.userInfo
+    },
+
+    /** 更新个人资料并同步本地登录用户信息 */
+    async updateProfile(params: UpdateProfileParams) {
+      this.userInfo = await updateCurrentUserApi(params)
       return this.userInfo
     },
 

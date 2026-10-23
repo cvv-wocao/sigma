@@ -106,6 +106,48 @@ logging:
 # ===== Agent 短期记忆（会话记忆）=====
 # 记忆存储在 Redis，key 形如 ai:chat:memory:{userId}:{conversationId}
 ai:
+  # ===== 用户自带模型 =====
+  # API Key 使用 AES-GCM 加密后写入 ai_user_model_config；生产环境务必通过环境变量替换默认口令。
+  user-model:
+    encryption-key: ${AI_MODEL_ENCRYPTION_KEY:local-dev-only-change-me}
+
+  # ===== 平台模型计费 =====
+  # 单价单位为「元 / 百万 Token」，与 DeepSeek 等厂商报价口径一致。
+  # 普通用户使用平台模型时按实际输入/输出 Token 扣余额；管理员免扣费，自带 Key 不扣平台费。
+  billing:
+    input-price-per-million-yuan: ${AI_INPUT_PRICE_PER_MILLION_YUAN:2.0}
+    output-price-per-million-yuan: ${AI_OUTPUT_PRICE_PER_MILLION_YUAN:8.0}
+
+  # ===== 微信支付 API v3（Native 扫码充值）=====
+  # 仅保存配置项，商户私钥与平台证书放挂载目录，禁止提交到 Git。
+  # notify-url 必须是微信服务器可访问的公网 HTTPS 地址。
+  wechat-pay:
+    enabled: ${WECHAT_PAY_ENABLED:false}
+    app-id: ${WECHAT_PAY_APP_ID:}
+    mch-id: ${WECHAT_PAY_MCH_ID:}
+    api-v3-key: ${WECHAT_PAY_API_V3_KEY:}
+    merchant-serial-number: ${WECHAT_PAY_MERCHANT_SERIAL_NUMBER:}
+    private-key-path: ${WECHAT_PAY_PRIVATE_KEY_PATH:/run/secrets/wechat-pay/apiclient_key.pem}
+    platform-cert-path: ${WECHAT_PAY_PLATFORM_CERT_PATH:/run/secrets/wechat-pay/platform_cert.pem}
+    notify-url: ${WECHAT_PAY_NOTIFY_URL:}
+    description: ${WECHAT_PAY_DESCRIPTION:AI 平台 Token 额度充值}
+    base-url: ${WECHAT_PAY_BASE_URL:https://api.mch.weixin.qq.com}
+    expire-minutes: ${WECHAT_PAY_EXPIRE_MINUTES:15}
+
+  # ===== 支付宝当面付（预下单 + 主动查单）=====
+  # 不配置 notify_url，因此不需要公网回调地址、备案域名或 HTTPS。
+  # 只需在支付宝开放平台创建应用、开通「当面付」，并挂载应用私钥与支付宝公钥。
+  alipay-pay:
+    enabled: ${ALIPAY_PAY_ENABLED:false}
+    app-id: ${ALIPAY_PAY_APP_ID:}
+    private-key-path: ${ALIPAY_PAY_PRIVATE_KEY_PATH:/run/secrets/alipay/app_private_key.pem}
+    alipay-public-key-path: ${ALIPAY_PAY_PUBLIC_KEY_PATH:/run/secrets/alipay/alipay_public_key.pem}
+    gateway-url: ${ALIPAY_PAY_GATEWAY_URL:https://openapi.alipay.com/gateway.do}
+    subject: ${ALIPAY_PAY_SUBJECT:AI 平台 Token 额度充值}
+    expire-minutes: ${ALIPAY_PAY_EXPIRE_MINUTES:15}
+    reconcile-interval-ms: ${ALIPAY_PAY_RECONCILE_INTERVAL_MS:60000}
+    reconcile-initial-delay-ms: ${ALIPAY_PAY_RECONCILE_INITIAL_DELAY_MS:30000}
+
   chat:
     memory:
       # 单个会话最多保留多少条消息（用户消息 + 助手回复合计），超出后只保留最近的若干条

@@ -51,7 +51,7 @@
               <span class="avatar avatar-sm">{{ avatarText }}</span>
               <span class="user-chip-info">
                 <span class="user-chip-name">{{ userStore.displayName || '未登录' }}</span>
-                <span class="user-chip-role">{{ userStore.userInfo?.username || '游客' }}</span>
+                <span class="user-chip-role">{{ roleLabel }}</span>
               </span>
               <AppIcon name="chevronDown" :size="15" />
             </button>
@@ -60,6 +60,18 @@
               <button class="dropdown-item" type="button" @click="go('/profile')">
                 <AppIcon name="user" :size="16" />
                 个人中心
+              </button>
+              <button class="dropdown-item" type="button" @click="go('/model-settings')">
+                <AppIcon name="cpu" :size="16" />
+                模型设置
+              </button>
+              <button class="dropdown-item" type="button" @click="go('/wallet')">
+                <AppIcon name="database" :size="16" />
+                额度中心
+              </button>
+              <button v-if="isAdmin" class="dropdown-item" type="button" @click="go('/admin/recharge')">
+                <AppIcon name="shield" :size="16" />
+                管理员充值
               </button>
               <button class="dropdown-item" type="button" @click="go('/history')">
                 <AppIcon name="history" :size="16" />
@@ -97,22 +109,37 @@ const userStore = useUserStore()
 const menuOpen = ref(false)
 const chipRef = ref<HTMLElement | null>(null)
 
-/** 侧边栏导航：按「工作台 / 账户」分组 */
-const navGroups = [
-  {
-    label: '工作台',
-    items: [
-      { to: '/recommend', label: 'AI 推荐', icon: 'sparkles' as const },
-      { to: '/search', label: '代码检索', icon: 'search' as const },
-      { to: '/history', label: '历史记录', icon: 'history' as const },
-      { to: '/project', label: '项目管理', icon: 'folder' as const }
-    ]
-  },
-  {
-    label: '账户',
-    items: [{ to: '/profile', label: '个人中心', icon: 'user' as const }]
+const isAdmin = computed(() => userStore.userInfo?.role === 'ADMIN')
+const roleLabel = computed(() => (isAdmin.value
+  ? `管理员 · ${userStore.userInfo?.username || ''}`
+  : userStore.userInfo?.username || '游客'))
+
+type NavIcon = 'sparkles' | 'search' | 'history' | 'folder' | 'user' | 'database' | 'cpu' | 'shield'
+type NavItem = { to: string; label: string; icon: NavIcon }
+
+/** 侧边栏导航：按「工作台 / 账户」分组；管理员额外显示充值入口 */
+const navGroups = computed<{ label: string; items: NavItem[] }[]>(() => {
+  const account: NavItem[] = [
+    { to: '/profile', label: '个人中心', icon: 'user' },
+    { to: '/wallet', label: '额度中心', icon: 'database' },
+    { to: '/model-settings', label: '模型设置', icon: 'cpu' }
+  ]
+  if (isAdmin.value) {
+    account.push({ to: '/admin/recharge', label: '管理员充值', icon: 'shield' })
   }
-]
+  return [
+    {
+      label: '工作台',
+      items: [
+        { to: '/recommend', label: 'AI 推荐', icon: 'sparkles' },
+        { to: '/search', label: '代码检索', icon: 'search' },
+        { to: '/history', label: '历史记录', icon: 'history' },
+        { to: '/project', label: '项目管理', icon: 'folder' }
+      ]
+    },
+    { label: '账户', items: account }
+  ]
+})
 
 /** 顶栏标题：与路由 meta 对应，避免页面里重复写大标题 */
 const PAGE_META: Record<string, { title: string; desc: string }> = {
@@ -120,7 +147,10 @@ const PAGE_META: Record<string, { title: string; desc: string }> = {
   search: { title: '代码检索', desc: '按关键词搜索 GitHub / Gitee 开源仓库，查看详情与分支，一键收藏' },
   history: { title: '历史记录', desc: '按会话回看全部问答：Redis 存短期记忆，MySQL 存完整历史' },
   project: { title: '项目管理', desc: '管理收藏的开源项目，补充备注与关注状态' },
-  profile: { title: '个人中心', desc: '查看登录账号信息与令牌状态' }
+  profile: { title: '个人中心', desc: '查看登录账号信息与令牌状态' },
+  wallet: { title: '额度中心', desc: '支付宝扫码充值，查看平台余额、累计充值/消耗与每次模型调用的 Token 明细' },
+  'model-settings': { title: '模型设置', desc: '配置自己的 OpenAI 兼容模型与 API Key，不再消耗平台 Token' },
+  'admin-recharge': { title: '管理员充值', desc: '查看所有用户额度与消费，并给指定用户充值平台 Token' }
 }
 
 const page = computed(() => {
